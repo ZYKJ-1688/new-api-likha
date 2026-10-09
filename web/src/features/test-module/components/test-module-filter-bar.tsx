@@ -134,6 +134,7 @@ export function TestModuleFilterBar(props: {
       props.filters.question_group_id,
       props.filters.channel_id,
       props.filters.models,
+      props.filters.consecutive_request_count,
     ].filter(Boolean).length
   const hasFilters =
     filterCount > 0
