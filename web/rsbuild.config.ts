@@ -13,13 +13,17 @@ export default defineConfig(({ envMode }) => {
   const serverUrl =
     process.env.VITE_REACT_APP_SERVER_URL ||
     env.rawPublicVars.VITE_REACT_APP_SERVER_URL ||
-    'http://localhost:3000'
+    'http://192.168.0.201:3000'
+    // 'http://localhost:3000'
 
   const isProd = envMode === 'production'
   const devProxy = Object.fromEntries(
     (['/api', '/v1', '/mj', '/pg'] as const).map((key) => [
       key,
-      { target: serverUrl, changeOrigin: true },
+      {
+        target: serverUrl,
+        changeOrigin: true,
+      },
     ])
   ) as Record<string, { target: string; changeOrigin: boolean }>
 
@@ -64,7 +68,7 @@ export default defineConfig(({ envMode }) => {
     },
     html: {
       template: './index.html',
-      favicon: './public/favicon.ico',
+      favicon: './public/fav.ico',
     },
     server: {
       host: '0.0.0.0',

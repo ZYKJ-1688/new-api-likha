@@ -95,7 +95,8 @@ export function PlaygroundInputTools({
   return (
     <>
       <PromptInputTools className='bg-background/70 border-border/60 rounded-lg border p-1 shadow-xs'>
-        <Tooltip>
+        {/* 未开发的功能暂不展示 */}
+        {/* <Tooltip>
           <DropdownMenu>
             <TooltipTrigger
               render={
@@ -128,9 +129,10 @@ export function PlaygroundInputTools({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-        </Tooltip>
+        </Tooltip> */}
 
-        <Tooltip>
+        {/* 未开发的功能暂不展示 */}
+        {/* <Tooltip>
           <TooltipTrigger
             render={
               <PromptInputButton
@@ -147,7 +149,7 @@ export function PlaygroundInputTools({
           <TooltipContent>
             <p>{t('Search')}</p>
           </TooltipContent>
-        </Tooltip>
+        </Tooltip> */}
 
         <PlaygroundParameterPanel
           config={config}

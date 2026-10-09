@@ -54,6 +54,7 @@ type LegacyComboboxProps = {
   id?: string
   openOnFocus?: boolean
   disabled?: boolean
+  showClear?: boolean
   name?: string
   onBlur?: React.FocusEventHandler<HTMLInputElement>
   onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>
@@ -121,7 +122,7 @@ function OptionCombobox(props: LegacyComboboxProps) {
         if (details.reason !== 'input-change') setSearch('')
       }}
       onValueChange={(option) => {
-        if (option) props.onValueChange?.(option.value)
+        props.onValueChange?.(option?.value ?? null)
       }}
       filter={(option, query) => {
         const term = query.trim().toLowerCase()
@@ -151,6 +152,7 @@ function OptionCombobox(props: LegacyComboboxProps) {
             props.searchPlaceholder ?? props.placeholder ?? t('Search...')
           }
           triggerAriaLabel={props['aria-label'] ?? t('Open')}
+          showClear={props.showClear}
           className='h-full min-h-8 w-full'
         >
           {props.showSelectedIcon && !open && selected?.icon && (

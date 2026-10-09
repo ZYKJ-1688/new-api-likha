@@ -164,6 +164,11 @@ export function useSidebarData(): SidebarData {
             requiredRole: ROLE.SUPER_ADMIN,
           },
           {
+            title: t('Test Module'),
+            url: '/test-module',
+            icon: ClipboardList,
+          },
+          {
             title: t('Task Plugins'),
             url: '/task-plugins',
             icon: PlugZap,
@@ -174,7 +179,6 @@ export function useSidebarData(): SidebarData {
             url: '/system-settings/site',
             activeUrls: ['/system-settings'],
             icon: Settings,
-            requiredRole: ROLE.SUPER_ADMIN,
           },
         ],
       },

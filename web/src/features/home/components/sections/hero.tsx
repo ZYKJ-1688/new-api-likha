@@ -146,7 +146,7 @@ export function Hero(props: HeroProps) {
                   {t('Go to Dashboard')}
                   <ArrowRight className='ml-1.5 size-4 transition-transform duration-200 group-hover:translate-x-0.5' />
                 </Button>
-                {renderDocsButton()}
+                {/* {renderDocsButton()} */}
               </>
             ) : (
               <>
@@ -164,7 +164,7 @@ export function Hero(props: HeroProps) {
                 >
                   {t('View Pricing')}
                 </Button>
-                {renderDocsButton()}
+                {/* {renderDocsButton()} */}
               </>
             )}
           </div>
@@ -178,11 +178,11 @@ export function Hero(props: HeroProps) {
               <span className='text-muted-foreground/50 text-[10px] font-bold tracking-[0.15em] uppercase'>
                 {t('Supported Applications')}
               </span>
-              <p className='text-muted-foreground/60 text-xs leading-relaxed'>
+              {/* <p className='text-muted-foreground/60 text-xs leading-relaxed'>
                 {t(
                   'Supports one-click configuration and perfectly adapts to NewAPI multi-protocol configuration.'
                 )}
-              </p>
+              </p> */}
             </div>
             <div className='flex flex-wrap items-center gap-3'>
               {/* Cherry Studio */}
