@@ -371,6 +371,44 @@ func SetApiRouter(router *gin.Engine) {
 			prefillGroupRoute.DELETE("/:id", controller.DeletePrefillGroup)
 		}
 
+		questionGroupRoute := apiRouter.Group("/question_group")
+		questionGroupRoute.Use(middleware.AdminAuth())
+		{
+			questionGroupRoute.GET("/", controller.GetQuestionGroups)
+			questionGroupRoute.POST("/", controller.CreateQuestionGroup)
+			questionGroupRoute.PUT("/", controller.UpdateQuestionGroup)
+			questionGroupRoute.DELETE("/:id", controller.DeleteQuestionGroup)
+		}
+
+		questionRoute := apiRouter.Group("/question")
+		questionRoute.Use(middleware.AdminAuth())
+		{
+			questionRoute.GET("/", controller.GetQuestions)
+			questionRoute.POST("/", controller.CreateQuestion)
+			questionRoute.PUT("/", controller.UpdateQuestion)
+			questionRoute.DELETE("/:id", controller.DeleteQuestion)
+		}
+
+		// 路由注册注意两点（均源于 gin v1.9.1 尾斜杠重定向 tsr 对前缀兄弟节点失效）：
+		// 1. 前缀不能以 /channel 开头（也不能撞其他既有分组的前缀），否则会劈开
+		//    路由树的 "channel/" 合并节点，导致不带斜杠调用的 /api/channel 404；
+		// 2. /test_task 与 /test_task_detail 互为前缀兄弟，同样会破坏尾斜杠重定向，
+		//    因此根路由用 ""（精确路径，不带尾斜杠）注册——精确静态匹配不受兄弟
+		//    节点劈开影响，与 /api/task、/api/plugin/task 的写法一致，调用时不带尾斜杠。
+		testTaskRoute := apiRouter.Group("/test_task")
+		testTaskRoute.Use(middleware.AdminAuth())
+		{
+			testTaskRoute.GET("", controller.GetTestTasks)
+			testTaskRoute.POST("", controller.CreateTestTask)
+		}
+
+		testTaskDetailRoute := apiRouter.Group("/test_task_detail")
+		testTaskDetailRoute.Use(middleware.AdminAuth())
+		{
+			testTaskDetailRoute.GET("", controller.GetChannelTestTaskDetails)
+			testTaskDetailRoute.GET("/stats", controller.GetChannelTestTaskStats)
+		}
+
 		mjRoute := apiRouter.Group("/mj")
 		mjRoute.GET("/self", middleware.UserAuth(), controller.GetUserMidjourney)
 		mjRoute.GET("/", middleware.AdminAuth(), controller.GetAllMidjourney)
