@@ -91,6 +91,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  RadioGroup,
+  RadioGroupItem,
+} from '@/components/ui/radio-group'
 import { Separator } from '@/components/ui/separator'
 import {
   Sheet,
@@ -231,6 +235,9 @@ import {
   ModelMappingEditor,
   type ModelMappingDraftRequest,
 } from '../model-mapping-editor'
+import {
+  OfficialModelMappingEditor,
+} from '../official-model-mapping-editor'
 import { ModelRedirectPanel } from '../model-redirect-panel'
 import { ResponsesWebSocketSetting } from '../responses-websocket-setting'
 import { UpstreamModelSelection } from '../upstream-model-selection'
@@ -595,6 +602,7 @@ export function ChannelMutateDrawer({
   const currentKey = formValues.key
   const currentModels = formValues.models
   const currentModelMapping = formValues.model_mapping
+  const currentOfficialModelMapping = formValues.official_model_mapping
   const awsKeyType = formValues.aws_key_type
   const vertexKeyType = formValues.vertex_key_type
   const upstreamModelUpdateCheckEnabled =
@@ -952,6 +960,66 @@ export function ChannelMutateDrawer({
     }
   }, [currentModelMapping, currentModelsArray])
 
+  const modelOfficialMappingGuardrail = useMemo<ModelMappingGuardrail>(() => {
+    if (!currentOfficialModelMapping?.trim()) {
+      return createEmptyModelMappingGuardrail()
+    }
+
+    try {
+      const parsed = JSON.parse(currentOfficialModelMapping)
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return { ...createEmptyModelMappingGuardrail(), invalidJson: true }
+      }
+
+      const entries = Object.entries(parsed).reduce<
+        Array<{ source: string; target: string }>
+      >((acc, [rawSource, rawTarget]) => {
+        const source = String(rawSource).trim()
+        const target = String(rawTarget ?? '').trim()
+
+        if (!source || !target) {
+          return acc
+        }
+
+        acc.push({ source, target })
+        return acc
+      }, [])
+
+      const missingSourceModels = [
+        ...new Set(
+          entries
+            .filter(
+              (entry) =>
+                Boolean(entry.source) &&
+                !currentModelsArray.includes(entry.source)
+            )
+            .map((entry) => entry.source)
+        ),
+      ]
+
+      const exposedTargetModels = [
+        ...new Set(
+          entries
+            .filter(
+              (entry) =>
+                Boolean(entry.target) &&
+                currentModelsArray.includes(entry.target)
+            )
+            .map((entry) => entry.target)
+        ),
+      ]
+
+      return {
+        invalidJson: false,
+        entries,
+        missingSourceModels,
+        exposedTargetModels,
+      }
+    } catch {
+      return { ...createEmptyModelMappingGuardrail(), invalidJson: true }
+    }
+  }, [currentOfficialModelMapping, currentModelsArray])
+
   const mappingPreviewPairs =
     modelMappingGuardrail.entries.length > 0
       ? modelMappingGuardrail.entries.slice(0, 3)
@@ -960,7 +1028,7 @@ export function ChannelMutateDrawer({
     modelMappingGuardrail.entries.length > 3
       ? modelMappingGuardrail.entries.length - 3
       : 0
-  const mappingCount = modelMappingGuardrail.entries.length
+  const mappingCount = modelMappingGuardrail.entries.length + modelOfficialMappingGuardrail.entries.length
   const upstreamAliases = useMemo(() => {
     const aliases: Record<string, string> = {}
     for (const entry of modelMappingGuardrail.entries) {
@@ -2526,6 +2594,58 @@ export function ChannelMutateDrawer({
                 </AlertDescription>
               </Alert>
             )}
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </div>
+  )
+
+  const upStreamModelMappingFields = (
+    <div
+      role='group'
+      aria-label={t('Official Model Mapping')}
+      className={channelConfigurationBlockClassName(
+        modelOfficialMappingGuardrail.entries.length > 0 ? 'configured' : configuration.blocks.modelMapping
+      )}
+    >
+      <FormField
+        control={form.control}
+        name='official_model_mapping'
+        render={({ field }) => (
+          <FormItem className='space-y-3'>
+            <div className='flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between'>
+              <div className='space-y-1'>
+                <div className='flex items-center gap-2'>
+                  <FormLabel className='mb-0'>{t('Official Model Mapping')}</FormLabel>
+                  <ChannelConfigurationStatusIndicator
+                    status={configuration.blocks.modelMapping}
+                  />
+                </div>
+                {/* <FormDescription>
+                  {t(FIELD_DESCRIPTIONS.MODEL_MAPPING)}
+                </FormDescription> */}
+              </div>
+            </div>
+            <FormControl>
+              <OfficialModelMappingEditor
+                value={field.value || ''}
+                onChange={field.onChange}
+                disabled={isSubmitting}
+                sourceModelOptions={currentModelsArray}
+                targetModelOptions={modelOptions.map((option) => option.value)}
+                onBatchAdd={
+                  canBatchMap
+                    ? () =>
+                        setBatchMapping({
+                          source: batchMappingSource,
+                        })
+                    : undefined
+                }
+                draftRequest={redirectPanelActive ? null : mappingDraftRequest}
+                onDraftRequestHandled={() => setMappingDraftRequest(null)}
+              />
+            </FormControl>
             <FormMessage />
           </FormItem>
         )}
@@ -4231,6 +4351,42 @@ export function ChannelMutateDrawer({
               />
             )}
 
+            <FormField
+              control={form.control}
+              name='is_official'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Is it an official website channel')}</FormLabel>
+                  <FormControl>
+                    <RadioGroup
+                      disabled={sensitiveLocked}
+                      value={field.value === 1 ? '1' : '0'}
+                      onValueChange={(value) => {
+                        form.setValue('is_official', Number(value), {
+                          shouldDirty: true,
+                          shouldValidate: true,
+                        })
+                      }}
+                      className='flex gap-4 mt-2 cursor-pointer'
+                    >
+                      <FormItem className='flex items-center space-x-2 space-y-0'>
+                        <FormControl>
+                          <RadioGroupItem value='1' />
+                        </FormControl>
+                        <FormLabel className='font-normal'>{'是'}</FormLabel>
+                      </FormItem>
+                      <FormItem className='flex items-center space-x-2 space-y-0'>
+                        <FormControl>
+                          <RadioGroupItem value='0' />
+                        </FormControl>
+                        <FormLabel className='font-normal'>{'否'}</FormLabel>
+                      </FormItem>
+                    </RadioGroup>
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+
             <ChannelAuthSection>
               {!isEditing && (
                 <FormField
@@ -4628,6 +4784,7 @@ export function ChannelMutateDrawer({
         routing={
           <>
             {redirectPanelActive ? redirectPanelNotice : modelMappingFields}
+            {upStreamModelMappingFields}
             {routingFields}
           </>
         }

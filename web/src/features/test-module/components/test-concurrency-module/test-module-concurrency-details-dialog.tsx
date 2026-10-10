@@ -20,9 +20,9 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
-import { getTestTaskDetail } from '../api'
+import { getTestTaskDetail } from '../../api'
 import { DataTablePage, useDataTable } from '@/components/data-table'
-import { useInsideTableColumns } from './test-module-columns'
+import { useInsideTableColumns } from '../common-components/test-module-columns'
 
 export function TestModuleConcurrencyDetailsDialog(props: { entry: any, taskId: number }) {
   const { t } = useTranslation()
@@ -70,7 +70,7 @@ export function TestModuleConcurrencyDetailsDialog(props: { entry: any, taskId: 
           {t('Details')}
         </Button>
       }
-      contentClassName='min-w-0 sm:max-w-6xl max-sm:max-h-(--dialog-available-height) max-sm:w-[calc(100vw-1.5rem)] max-sm:max-w-[calc(100vw-1.5rem)]'
+      contentClassName='min-w-0 sm:max-w-7xl max-sm:max-h-(--dialog-available-height) max-sm:w-[calc(100vw-1.5rem)] max-sm:max-w-[calc(100vw-1.5rem)]'
       titleClassName='text-base'
       contentHeight='auto'
       bodyClassName='space-y-3'

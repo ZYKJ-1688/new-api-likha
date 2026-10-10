@@ -23,11 +23,11 @@ import { cn } from '@/lib/utils'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { STATUS_CONFIG, QUEST_STATUS_CONFIG } from '../api'
-import type { AuditLog } from '../api'
+import { STATUS_CONFIG, QUEST_STATUS_CONFIG, TASK_STATUS_CONFIG } from '../../api'
+import type { AuditLog } from '../../api'
 import { TruncatedCell } from '@/components/data-table'
-import { TestModuleDetailsDialog } from './test-module-details-dialog'
-import { TestModuleConcurrencyDetailsDialog } from './test-module-concurrency-details-dialog'
+import { TestModuleDetailsDialog } from '../test-module/test-module-details-dialog'
+import { TestModuleConcurrencyDetailsDialog } from '../test-concurrency-module/test-module-concurrency-details-dialog'
 
 export function useTestModuleColumns () {
   const { t } = useTranslation()
@@ -248,7 +248,35 @@ export function useInsideTableColumns () {
           <span className='ml-1'>ms</span>
         </>
       ),
-      meta: { label: 'total_time' },
+      meta: { label: '延迟(总耗时)' },
+    },
+    {
+      accessorKey: 'ttft',
+      header: 'TTFT',
+      size: 60,
+      cell: ({ row }) => (
+        <>
+          <span className='text-black !text-[1.2rem] !font-bold'>
+            {row.original.ttft ?? '-'}
+          </span>
+          <span className='ml-1'>ms</span>
+        </>
+      ),
+      meta: { label: 'TTFT' },
+    },
+    {
+      accessorKey: 'output_tokens_per_second',
+      header: 'token吞吐率',
+      size: 60,
+      cell: ({ row }) => (
+        <>
+          <span className='text-black !text-[1.2rem] !font-bold'>
+            {row.original.output_tokens_per_second?.toFixed(2) ?? '-'}
+          </span>
+          <span className='ml-1'>tokens/s</span>
+        </>
+      ),
+      meta: { label: 'token吞吐率' },
     },
     {
       accessorKey: 'status',
@@ -399,7 +427,7 @@ export function useInsideTableCounColumns (task_id: number) {
           {row.original.model || '—'}
         </span>
       ),
-      meta: { label: 'model' },
+      meta: { label: '模型' },
     },
     {
       accessorKey: 'fail',
@@ -545,6 +573,261 @@ export function useInsideTableCounColumns (task_id: number) {
       size: 40,
       enableHiding: false,
       cell: ({ row }) => <TestModuleConcurrencyDetailsDialog entry={row.original} taskId={task_id}/>,
+      meta: { label: t('Details') },
+    }
+  ], [t])
+}
+
+export function useTestModuleInjectColumns () {
+  const { t } = useTranslation()
+  return useMemo(() => {
+    const columns: ColumnDef<AuditLog>[] = [
+      {
+        id: 'expand',
+        header: () => null,
+        size: 30,
+        enableHiding: false,
+        cell: ({ row }) => {
+          if (row.original?.status !== 2) return null
+          return <Button
+            variant='ghost'
+            size='icon'
+            className='h-8 w-8'
+            onClick={(e) => {
+              e.stopPropagation()
+              row.toggleExpanded()
+            }}
+          >
+            <ChevronRight
+              className={cn(
+                'h-8 w-8 shrink-0 transition-transform duration-200',
+                row.getIsExpanded() && 'rotate-90'
+              )}
+            />
+          </Button>
+        },
+      },
+    ]
+    columns.push(
+      {
+        id: 'model',
+        header: '模型',
+        size: 100,
+        enableHiding: false,
+        cell: ({ row }) => (
+          <TruncatedCell className='max-w-100'>
+            {row.original?.model || '—'}
+          </TruncatedCell>
+        ),
+        meta: { label: '模型' },
+      },
+      {
+        accessorKey: 'question_group_name',
+        header: '问题模块',
+        size: 70,
+        cell: ({ row }) => (
+          <span className='font-mono'>{row.original?.question_group_name || '—'}</span>
+        ),
+        meta: { label: '问题模块' },
+      },
+      {
+        id: 'created_time_text',
+        header: '开始时间',
+        size: 70,
+        enableHiding: false,
+        cell: ({ row }) => (
+          <span className='font-mono'>{row.original?.created_time_text || '—'}</span>
+        ),
+        meta: { label: '开始时间' },
+      },
+      {
+        id: 'status',
+        header: '状态',
+        size: 70,
+        enableHiding: false,
+        cell: ({ row }) => {
+          const cfg = STATUS_CONFIG[row.original?.status]
+          return (
+            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-mono ${cfg?.className ?? 'bg-gray-100 text-gray-600'}`}>
+              {cfg?.text ?? '—'}
+            </span>
+          )
+        },
+        meta: { label: '状态' },
+      },
+      // {
+      //   id: 'details',
+      //   header: t('Details'),
+      //   size: 70,
+      //   enableHiding: false,
+      //   cell: ({ row }) => <TestModuleDetailsDialog entry={row.original} />,
+      //   meta: { label: t('Details') },
+      // }
+    )
+    return columns
+  }, [t])
+}
+
+export function useInsideTableInjectColumns () {
+  const { t } = useTranslation()
+  return useMemo<ColumnDef<any>[]>(() => [
+    {
+      accessorKey: 'prompt',
+      header: '问题',
+      size: 80,
+      cell: ({ row }) => (
+        <TruncatedCell className='max-w-80'>
+          {row.original?.prompt || '—'}
+        </TruncatedCell>
+      ),
+      meta: { label: '问题' },
+    },
+    {
+      accessorKey: 'channel_name',
+      header: '渠道',
+      size: 60,
+      cell: ({ row }) => (
+        <span className='font-mono'>{row.original.channel_name || '—'}</span>
+      ),
+      meta: { label: '渠道' },
+    },
+    {
+      accessorKey: 'model',
+      header: '模型',
+      size: 60,
+      cell: ({ row }) => (
+        <span className='text-muted-foreground font-mono'>
+          {row.original.model || '—'}
+        </span>
+      ),
+      meta: { label: '模型' },
+    },
+    {
+      accessorKey: 'input_token',
+      header: '输入token',
+      size: 45,
+      cell: ({ row }) => (
+        <span className='text-black !text-[1.2rem] !font-bold'>
+          {row.original.input_token ?? '—'}
+        </span>
+      ),
+      meta: { label: '输入token' },
+    },
+    {
+      accessorKey: 'output_token',
+      header: '输出token',
+      size: 45,
+      cell: ({ row }) => (
+        <span className='text-black !text-[1.2rem] !font-bold'>
+          {row.original.output_token ?? '—'}
+        </span>
+      ),
+      meta: { label: '输出token' },
+    },
+    {
+      accessorKey: 'total_token',
+      header: '总消耗token',
+      size: 50,
+      cell: ({ row }) => (
+        <span className='text-black !text-[1.2rem] !font-bold'>
+          {row.original.total_token ?? '—'}
+        </span>
+      ),
+      meta: { label: '总消耗token' },
+    },
+    {
+      accessorKey: 'total_time',
+      header: '延迟(总耗时)',
+      size: 60,
+      cell: ({ row }) => (
+        <>
+          <span className='text-black !text-[1.2rem] !font-bold'>
+            {row.original.total_time ?? '-'}
+          </span>
+          <span className='ml-1'>ms</span>
+        </>
+      ),
+      meta: { label: '延迟(总耗时)' },
+    },
+    {
+      accessorKey: 'ttft',
+      header: 'TTFT',
+      size: 40,
+      cell: ({ row }) => (
+        <>
+          <span className='text-black !text-[1.2rem] !font-bold'>
+            {row.original.ttft ?? '-'}
+          </span>
+          <span className='ml-1'>ms</span>
+        </>
+      ),
+      meta: { label: 'TTFT' },
+    },
+    {
+      accessorKey: 'output_tokens_per_second',
+      header: 'token吞吐率',
+      size: 50,
+      cell: ({ row }) => (
+        <>
+          <span className='text-black !text-[1.2rem] !font-bold'>
+            {row.original.output_tokens_per_second?.toFixed(2) ?? '-'}
+          </span>
+          <span className='ml-1'>tokens/s</span>
+        </>
+      ),
+      meta: { label: 'token吞吐率' },
+    },
+    {
+      accessorKey: 'status',
+      header: '状态',
+      size: 40,
+      cell: ({ row }) => {
+        const cfg = QUEST_STATUS_CONFIG[row.original?.status]
+        return (
+          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-mono ${cfg?.className ?? 'bg-gray-100 text-gray-600'}`}>
+            {cfg?.text ?? '—'}
+          </span>
+        )
+      },
+      meta: { label: '状态' },
+    },
+    {
+      accessorKey: 'is_verified',
+      header: '对比结果',
+      size: 40,
+      cell: ({ row }) => {
+        const cfg = TASK_STATUS_CONFIG[row.original?.is_verified]
+        if (row.original?.is_official !== 1) {
+          return (
+            <span className={`!text-[1.05rem] !font-bold inline-flex items-center rounded-full px-2 py-0.5 text-xs font-mono ${cfg?.className ?? 'bg-gray-100 text-gray-600'}`}>
+              {cfg?.text ?? '—'}
+            </span>
+          )
+        }
+        return "-"
+      },
+      meta: { label: '对比结果' },
+    },
+    {
+      accessorKey: 'verification_message',
+      header: '判断信息',
+      size: 100,
+      cell: ({ row }) => (
+        // <TruncatedCell className='max-w-60'>
+        //   {row.original.verification_message ?? '—'}
+        // </TruncatedCell>
+        <div className='break-all whitespace-normal'>
+          {row.original.verification_message ?? '—'}
+        </div>
+      ),
+      meta: { label: '判断信息' },
+    },
+    {
+      id: 'details',
+      header: '显示源码',
+      size: 40,
+      enableHiding: false,
+      cell: ({ row }) => <TestModuleDetailsDialog entry={row.original} />,
       meta: { label: t('Details') },
     }
   ], [t])

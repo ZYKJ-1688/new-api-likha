@@ -33,6 +33,11 @@ export const QUEST_STATUS_CONFIG: Record<number, { text: string; className: stri
   2: { text: '失败', className: 'text-red-500' },
 }
 
+export const TASK_STATUS_CONFIG: Record<number, { text: string; className: string }> = {
+  1: { text: '通过', className: 'text-[#0ab339]' },
+  0: { text: '未通过', className: 'text-[#db0f0f]' },
+}
+
 export interface AuditLog {
   id: number,
   question_group_name: string,
@@ -66,7 +71,7 @@ export interface testConcurrentFilters {
 
 export interface CreateTestTask {
   type: number,                    // 1 顺序测速, 2 并发测试
-  channel_id: number | undefined | null,
+  channel_id?: number | undefined | null,
   models: string[],
   question_group_id: number,
   concurrent?: number,              // type=2 必填, 1~50 并发数量
@@ -197,6 +202,15 @@ export async function getTestTaskDetail(param: string) {
 // 获取测试任务详情(并发)
 export async function getTestTaskConcurrentDetail(param: string) {
   const response = await api.get('/api/test_task_detail/stats?' + param)
+  if (!response.data.success) {
+    throw createServerError(response.data, t('Failed to load'))
+  }
+  return response.data.data
+}
+
+// 获取有官网模型映射的模型列表
+export async function getHasOfficialModelList() {
+  const response = await api.get('/api/channel/models_official')
   if (!response.data.success) {
     throw createServerError(response.data, t('Failed to load'))
   }

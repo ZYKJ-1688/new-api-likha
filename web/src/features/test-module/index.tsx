@@ -22,8 +22,9 @@ import { useTranslation } from 'react-i18next'
 import { SectionPageLayout } from '@/components/layout'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
-import { TestModuleViewer } from './components/test-module-viewer'
-import { TestModuleConcurrencyViewer } from './components/test-module-concurrency-viewer'
+import { TestModuleViewer } from './components/test-module/test-module-viewer'
+import { TestModuleConcurrencyViewer } from './components/test-concurrency-module/test-module-concurrency-viewer'
+import { TestModuleInjectViewer } from './components/test-inject-module/test-module-inject-viewer'
 
 export function TestModule() {
   const { t } = useTranslation()
@@ -58,6 +59,11 @@ export function TestModule() {
             </div>
           </TabsContent>
           <TabsContent value='ReconciliationTest' className='min-h-0 flex-1'>
+            <div className='flex h-full min-h-0 flex-col gap-3'>
+              <div className='min-h-0 flex-1'>
+                <TestModuleInjectViewer />
+              </div>
+            </div>
           </TabsContent>
         </Tabs>
       </SectionPageLayout.Content>

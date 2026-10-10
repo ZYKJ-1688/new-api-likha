@@ -30,8 +30,8 @@ import { Button } from '@/components/ui/button'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { toast } from 'sonner'
 
-import { getTestTaskList, createTestTask, getTestTaskConcurrentDetail, type testConcurrentFilters, type AuditLog } from '../api'
-import { useTestModuleCounColumns, useInsideTableCounColumns } from './test-module-columns'
+import { getTestTaskList, createTestTask, getTestTaskConcurrentDetail, type testConcurrentFilters, type AuditLog } from '../../api'
+import { useTestModuleCounColumns, useInsideTableCounColumns } from '../common-components/test-module-columns'
 import { TestModuleConcurrencyFilterBar } from './test-module-concurrency-filter-bar'
 
 const EMPTY_LOGS: AuditLog[] = []
@@ -167,7 +167,7 @@ export function TestModuleConcurrencyViewer(props: {
       isNaN(concurrentNum) || concurrentNum <= 0 ||
       isNaN(totalCountNum) || totalCountNum <= 0
     ) {
-      toast.warning('请选择必要条件，并发、总数量必须为正整数', { duration: 2000 })
+      toast.warning('请选择必要条件', { duration: 2000 })
       return
     }
   

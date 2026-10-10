@@ -30,8 +30,8 @@ import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
-import { getTestTaskList, createTestTask, getTestTaskDetail, type testFilters, type AuditLog } from '../api'
-import { useTestModuleColumns, useInsideTableColumns } from './test-module-columns'
+import { getTestTaskList, createTestTask, getTestTaskDetail, type testFilters, type AuditLog } from '../../api'
+import { useTestModuleColumns, useInsideTableColumns } from '../common-components/test-module-columns'
 import { TestModuleFilterBar } from './test-module-filter-bar'
 
 const EMPTY_LOGS: AuditLog[] = []

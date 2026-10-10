@@ -41,7 +41,6 @@ import {
   validateAdvancedCustomConfig,
 } from './advanced-custom'
 import { readTaskExtendPluginKeys } from './channel-plugin-extensions'
-import { supportsResponsesWebSocket } from './responses-websocket'
 
 // ============================================================================
 // Form Validation Schema
@@ -220,6 +219,14 @@ export const channelFormSchema = z
         isOptionalModelMapping,
         'Model mapping must be a JSON object with string values'
       ),
+    official_model_mapping: z
+      .string()
+      .optional()
+      .refine(
+        isOptionalModelMapping,
+        'Model mapping must be a JSON object with string values'
+      ),
+    is_official: z.number().optional(),
     priority: z.number().optional(),
     weight: z.number().optional(),
     test_model: z.string().optional(),
@@ -435,6 +442,8 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   key: '',
   openai_organization: '',
   models: '',
+  official_model_mapping: '',
+  is_official: 0,
   group: ['default'],
   model_mapping: '',
   priority: 0,
@@ -599,6 +608,8 @@ export function transformChannelToFormDefaults(
     models: channel.models || '',
     group: parseGroups(channel.group || 'default'),
     model_mapping: channel.model_mapping || '',
+    is_official: channel.is_official || 0,
+    official_model_mapping: channel.official_model_mapping || '',
     priority: channel.priority || 0,
     weight: channel.weight || 0,
     test_model: channel.test_model || '',
@@ -660,7 +671,7 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
       formData.type !== CHANNEL_TYPE_ADVANCED_CUSTOM &&
       formData.pass_through_body_enabled === true,
     responses_websocket_enabled:
-      supportsResponsesWebSocket(formData.type) &&
+      (formData.type === 1 || formData.type === 57) &&
       formData.responses_websocket_enabled === true,
     system_prompt: formData.system_prompt || '',
     system_prompt_override: formData.system_prompt_override || false,
@@ -900,6 +911,8 @@ export function transformFormDataToUpdatePayload(
     models: formData.models,
     group: formatGroups(formData.group),
     model_mapping: formData.model_mapping || null,
+    official_model_mapping: formData.official_model_mapping || null,
+    is_official: formData.is_official ?? 0,
     priority: formData.priority ?? 0,
     weight: formData.weight ?? 0,
     test_model: formData.test_model || null,
@@ -933,6 +946,8 @@ export function transformFormDataToUpdatePayload(
   payload.tag = formData.tag || ''
   payload.remark = formData.remark || ''
   payload.model_mapping = formData.model_mapping || ''
+  payload.official_model_mapping = formData.official_model_mapping || ''
+  payload.is_official = formData.is_official || 0
   payload.status_code_mapping = formData.status_code_mapping || ''
   payload.param_override = formData.param_override || ''
   payload.header_override = formData.header_override || ''
