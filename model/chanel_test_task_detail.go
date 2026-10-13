@@ -15,6 +15,7 @@ type TestTaskDetail struct {
 	InputToken            int     `json:"input_token"`
 	CachedToken           int     `json:"cached_token"`
 	OutputToken           int     `json:"output_token"`
+	ReasoningToken        int     `json:"reasoning_token"`
 	Ttft                  int     `json:"ttft"`
 	OutputTokensPerSecond float64 `json:"output_tokens_per_second"`
 	IsOfficial            int     `json:"is_official"`
