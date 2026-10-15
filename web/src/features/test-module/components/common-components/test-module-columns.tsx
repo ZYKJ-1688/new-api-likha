@@ -175,33 +175,31 @@ export function useInsideTableColumns () {
     {
       accessorKey: 'prompt',
       header: '问题',
-      size: 100,
+      size: 60,
       cell: ({ row }) => (
-        <TruncatedCell className='max-w-100'>
+        <TruncatedCell className='max-w-60'>
           {row.original?.prompt || '—'}
         </TruncatedCell>
       ),
-      meta: { label: t('prompt') },
+      meta: { label: '问题' },
     },
     {
       accessorKey: 'channel_name',
       header: '渠道',
-      size: 70,
+      size: 60,
       cell: ({ row }) => (
         <span className='font-mono'>{row.original.channel_name || '—'}</span>
       ),
-      meta: { label: 'channel_name' },
+      meta: { label: '渠道' },
     },
     {
       accessorKey: 'model',
       header: '模型',
-      size: 76,
+      size: 60,
       cell: ({ row }) => (
-        <span className='text-muted-foreground font-mono'>
-          {row.original.model || '—'}
-        </span>
+        <span className='font-mono'>{row.original.model || '—'}</span>
       ),
-      meta: { label: 'model' },
+      meta: { label: '模型' },
     },
     {
       accessorKey: 'input_token',
@@ -228,13 +226,24 @@ export function useInsideTableColumns () {
     {
       accessorKey: 'total_token',
       header: '总消耗token',
-      size: 60,
+      size: 50,
       cell: ({ row }) => (
         <span className='text-black !text-[1.2rem] !font-bold'>
           {row.original.total_token ?? '—'}
         </span>
       ),
       meta: { label: '总消耗token' },
+    },
+    {
+      accessorKey: 'reasoning_token',
+      header: '推理 token',
+      size: 50,
+      cell: ({ row }) => (
+        <span className='text-black !text-[1.2rem] !font-bold'>
+          {row.original.reasoning_token ?? '—'}
+        </span>
+      ),
+      meta: { label: '推理 token' },
     },
     {
       accessorKey: 'total_time',
@@ -622,6 +631,15 @@ export function useTestModuleInjectColumns () {
         meta: { label: '模型' },
       },
       {
+        accessorKey: 'channel_name',
+        header: '渠道',
+        size: 60,
+        cell: ({ row }) => (
+          <span className='font-mono'>{row.original.channel_name || '—'}</span>
+        ),
+        meta: { label: '渠道' },
+      },
+      {
         accessorKey: 'question_group_name',
         header: '问题模块',
         size: 70,
@@ -736,6 +754,17 @@ export function useInsideTableInjectColumns () {
       meta: { label: '总消耗token' },
     },
     {
+      accessorKey: 'reasoning_token',
+      header: '推理 token',
+      size: 50,
+      cell: ({ row }) => (
+        <span className='text-black !text-[1.2rem] !font-bold'>
+          {row.original.reasoning_token ?? '—'}
+        </span>
+      ),
+      meta: { label: '推理 token' },
+    },
+    {
       accessorKey: 'total_time',
       header: '延迟(总耗时)',
       size: 60,
@@ -752,7 +781,7 @@ export function useInsideTableInjectColumns () {
     {
       accessorKey: 'ttft',
       header: 'TTFT',
-      size: 40,
+      size: 50,
       cell: ({ row }) => (
         <>
           <span className='text-black !text-[1.2rem] !font-bold'>
@@ -766,7 +795,7 @@ export function useInsideTableInjectColumns () {
     {
       accessorKey: 'output_tokens_per_second',
       header: 'token吞吐率',
-      size: 50,
+      size: 60,
       cell: ({ row }) => (
         <>
           <span className='text-black !text-[1.2rem] !font-bold'>
@@ -816,7 +845,7 @@ export function useInsideTableInjectColumns () {
         // <TruncatedCell className='max-w-60'>
         //   {row.original.verification_message ?? '—'}
         // </TruncatedCell>
-        <div className='break-all whitespace-normal'>
+        <div className='whitespace-pre-line break-all whitespace-normal'>
           {row.original.verification_message ?? '—'}
         </div>
       ),
