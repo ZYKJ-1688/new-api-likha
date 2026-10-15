@@ -70,7 +70,7 @@ export function TestModuleConcurrencyDetailsDialog(props: { entry: any, taskId: 
           {t('Details')}
         </Button>
       }
-      contentClassName='min-w-0 sm:max-w-7xl max-sm:max-h-(--dialog-available-height) max-sm:w-[calc(100vw-1.5rem)] max-sm:max-w-[calc(100vw-1.5rem)]'
+      contentClassName='min-w-0 max-sm:max-h-(--dialog-available-height) sm:w-[calc(100vw-30rem)] sm:max-w-[calc(100vw-30rem)]'
       titleClassName='text-base'
       contentHeight='auto'
       bodyClassName='space-y-3'

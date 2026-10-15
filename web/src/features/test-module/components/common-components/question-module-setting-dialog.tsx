@@ -15,6 +15,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/dialog'
 import { Trash2, Pencil, CheckIcon } from 'lucide-react'
@@ -39,6 +40,7 @@ export function QuestionTemplateSettingDialog(props: QuestionTemplateSettingDial
   const [questionList, setQuestionList] = useState<any[]>([])
   const deleteRef = useRef<any>({})
   const questionRef = useRef<any>({})
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   // 新增/更新模板
   const confirmModule = async (item: any) => {
@@ -88,7 +90,7 @@ export function QuestionTemplateSettingDialog(props: QuestionTemplateSettingDial
 
   // 获取问题列表
   const getQuestionListFun = async (id: number) => {
-    const { items } = await getQuestion(`group_id=${id}`)
+    const { items } = await getQuestion(`group_id=${id}&page_size=999`)
     setQuestionList(items)
     questionRef.current = items
   }
@@ -96,7 +98,21 @@ export function QuestionTemplateSettingDialog(props: QuestionTemplateSettingDial
   // 新增 && 修改问题
   const updateQuestionFun = async (value: string, item: any) => {
     const trimValue = value.trim()
-    if (!trimValue) return
+    if (!trimValue) {
+      const isEdit = item.id < 10000
+      if (isEdit) {
+        // 编辑时，如果内容为空，则复原
+        const updateLineText = questionRef.current.find((line: any) => line.id === item.id)?.prompt
+        setQuestionList(prevList =>
+          prevList.map((prevItem: any) =>
+            prevItem.id === item.id
+              ? { ...prevItem, prompt: updateLineText }
+              : prevItem
+          )
+        )
+      }
+      return
+    }
     try {
       const isEdit = item.id < 10000
       if (isEdit) {
@@ -141,7 +157,7 @@ export function QuestionTemplateSettingDialog(props: QuestionTemplateSettingDial
         <div className='flex flex-col gap-10 justify-end h-120'>
           {!loading ? <div className='min-w-0 space-y-1.5 flex flex-row items-center h-full'>
             <div className='flex flex-col items-center justify-between w-[40%] h-full m-0'>
-              <div className='flex flex-col gap-2 w-full'>
+              <div className='flex flex-col gap-2 w-full overflow-y-auto p-2'>
                 {
                   moduleList.map((item, index) => {
                     if (!item?.edit) return <div key={item?.id}
@@ -189,8 +205,14 @@ export function QuestionTemplateSettingDialog(props: QuestionTemplateSettingDial
                           className='h-8 w-50 text-sm leading-5'
                         />
                         <div className='flex flex-row items-center gap-5'>
-                          <Trash2 size={16} className='cursor-pointer' onClick={() => {
-                            setModuleList(prevList => prevList.filter((_, i) => i !== index))
+                          <Trash2 size={16} className='cursor-pointer' onClick={(e) => {
+                            e.stopPropagation()
+                            if (item?.id < 10000) {
+                              deleteRef.current = { type: 'module', id: item?.id }
+                              setAlertOpen(true)
+                            } else {
+                              setModuleList(prevList => prevList.filter((_, i) => i !== index))
+                            }
                           }} />
                           <CheckIcon size={16} className="cursor-pointer" onClick={() => {
                             if (!item.name) return
@@ -213,15 +235,16 @@ export function QuestionTemplateSettingDialog(props: QuestionTemplateSettingDial
                 {'添加模块'}
               </Button>
             </div>
-            <div className='flex flex-col gap-5 w-[calc(60%-20px)] h-full items-center justify-between ml-5'>
-              <div className='w-full'>
-                {moduleAct && questionList.length > 0 && <div className='flex flex-col items-center justify-between gap-2'>
+            <div className='flex flex-col gap-5 w-[calc(60%-12px)] h-full items-center justify-between ml-3'>
+              <div ref={scrollContainerRef} className='w-full overflow-y-auto p-2'>
+                {moduleAct && questionList.length > 0 && <div className='flex flex-col items-center justify-between gap-4'>
                   {
                     questionList.map((item: any, index: number) => {
                       return (
-                        <div key={index} className='h-8 w-full flex flex-row items-center justify-between gap-5'>
-                          <Input
+                        <div key={index} className='w-full flex flex-row items-center justify-between gap-3'>
+                          <Textarea
                             key={(item?.id || 0).toString() + index.toString()}
+                            rows={3}
                             placeholder={'问题'}
                             value={item.prompt || ''}
                             onChange={(e) => {
@@ -238,7 +261,7 @@ export function QuestionTemplateSettingDialog(props: QuestionTemplateSettingDial
                               updateQuestionFun(e.target.value, item)
                             }}
                             autoComplete='off'
-                            className='h-8 w-100 text-sm leading-5'
+                            className='w-full max-h-30 text-sm leading-5 resize-none'
                           />
                           <Trash2 size={16} className='cursor-pointer' onClick={() => {
                             if (item?.id < 99999999) {
@@ -261,6 +284,11 @@ export function QuestionTemplateSettingDialog(props: QuestionTemplateSettingDial
                   if (questionList.length === 0 && !moduleAct) return
                   if ((!questionList[questionList.length - 1]?.prompt) && questionList.length !== 0) return
                   setQuestionList(prevList => [...prevList, { prompt: '', id: 99999999 }])
+                  setTimeout(() => {
+                    if (scrollContainerRef.current) {
+                      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
+                    }
+                  }, 0)
                 }}
               >
                 {'添加问题'}

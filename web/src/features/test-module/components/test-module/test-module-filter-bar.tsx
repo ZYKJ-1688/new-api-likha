@@ -54,10 +54,11 @@ export function TestModuleFilterBar(props: {
             options={moduleList}
             value={props.filters.question_group_id ?? ''}
             onValueChange={(value) => {
-              if (value !== null) props.onChange({
-                question_group_id: value || undefined,
+              props.onChange({
+                question_group_id: value || '',
               })
             }}
+            showClear={true}
             aria-label={'问题模板'}
             placeholder={'问题模板'}
             className='w-full h-8'

@@ -12,9 +12,16 @@ You should have received a copy of the GNU Affero General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Combobox } from '@/components/ui/combobox'
-import { MultiSelect } from '@/components/multi-select'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import type { Table } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 import {
@@ -23,7 +30,7 @@ import {
 } from '../common-components/test-module-toolbar'
 import type { testFilters, AuditLog } from '../../api'
 import { Button } from '@/components/ui/button'
-import { getQuestionGroup, getHasOfficialModelList } from '../../api'
+import { getQuestionGroup, getHasOfficialModelList, getChannelList } from '../../api'
 import { QuestionTemplateSettingDialog } from '../common-components/question-module-setting-dialog'
 
 export function TestModuleInjectFilterBar(props: {
@@ -40,21 +47,52 @@ export function TestModuleInjectFilterBar(props: {
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
   const [moduleList, setModuleList] = useState<any[]>([])
   const [modelList, setModelList] = useState<any>([])
+  const [channelList, setChannelList] = useState<any>([])
+  const channelRef = useRef([])
 
   const mainFilters = (
     <div className="flex items-center gap-3">
       {!props.accessOnly && (
         <>
           <LogsFilterField className="w-1/4">
-            <MultiSelect
-              options={modelList}
-              selected={props.filters.models ?? []}
-              onChange={(value) => {
+            <Select
+              items={modelList}
+              onValueChange={(value: any) => {
                 props.onChange({
-                  models: value || undefined,
+                  models: value ? [value] : undefined,
+                  channel_id: undefined,
+                })
+                setChannelList([])
+              }}
+              value={props.filters.models?.[0] ?? ""}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={'模型'} />
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                <SelectGroup>
+                  {modelList.map((item: any) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </LogsFilterField>
+          <LogsFilterField className="w-1/4">
+            <Combobox
+              options={channelList}
+              value={props.filters.channel_id ?? ''}
+              onValueChange={(value) => {
+                props.onChange({
+                  channel_id: value || undefined,
                 })
               }}
-              placeholder={'模型'}
+              showClear={true}
+              aria-label={'渠道'}
+              placeholder={'渠道'}
+              className='w-full h-8'
             />
           </LogsFilterField>
           <LogsFilterField className="w-1/4">
@@ -78,6 +116,7 @@ export function TestModuleInjectFilterBar(props: {
   
   const filterCount =
     [
+      props.filters.channel_id,
       props.filters.question_group_id,
       props.filters.models,
     ].filter(Boolean).length
@@ -109,9 +148,41 @@ export function TestModuleInjectFilterBar(props: {
     setModelList(list)
   }
 
+  // 获取渠道列表
+  const getChannelFun = async () => {
+    const { items } = await getChannelList()
+    const channelList = items.map((item: any) => {
+      let officialModuleList: string[] = []
+      try {
+        if (item.official_model_mapping?.trim()) {
+          const mappingObj = JSON.parse(item.official_model_mapping)
+          officialModuleList = Object.values(mappingObj)
+        }
+      } catch (err) {
+        officialModuleList = []
+      }
+      return {
+        id: item.id,
+        value: item.id,
+        label: item.name,
+        officialModuleList
+      }
+    })
+    channelRef.current = channelList
+  }
+
+  useEffect(() => {
+    const list = props.filters.models || []
+    const channelList = channelRef.current.filter((item: any) => {
+      return item.officialModuleList.some((module: any) => list.includes(module))
+    })
+    setChannelList(channelList || [])
+  }, [props.filters.models])
+
   useEffect(() => {
     getQuestionGroupFun()
     getModelListFun()
+    getChannelFun()
   }, [])
 
   return (

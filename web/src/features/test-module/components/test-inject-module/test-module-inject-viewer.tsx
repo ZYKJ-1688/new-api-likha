@@ -64,7 +64,7 @@ export function InsideTable(props: { item: any }) {
     fetchData()
   }, [])
 
-  return <div className='flex min-h-0 flex-col h-[400px]'>
+  return <div className='flex min-h-0 flex-col h-[640px]'>
     <DataTablePage
       table={table}
       columns={columns}
@@ -151,12 +151,14 @@ export function TestModuleInjectViewer(props: {
     setFilters((previous) => ({ ...previous, ...patch, p: 1, type: 3 }))
 
   const createTestTaskFun = async () => {
-    const { question_group_id, models } = filters
+    const { question_group_id, models, channel_id } = filters
     // 1. 先做安全数字转换
     const questionGroupId = Number(question_group_id)
+    const channelId = Number(channel_id)
   
     // 2. 校验：非空 + 合法正整数
     if (
+      isNaN(channelId) || channelId <= 0 ||
       isNaN(questionGroupId) || questionGroupId <= 0 ||
       !Array.isArray(models) || models.length === 0
     ) {
@@ -165,7 +167,7 @@ export function TestModuleInjectViewer(props: {
     }
 
     try {
-      await createTestTask({ question_group_id: questionGroupId, models: models ?? [], type: 3 })
+      await createTestTask({ question_group_id: questionGroupId, channel_id: channelId, models: models ?? [], type: 3 })
       const reSetFilters = { p:1, page_size: filters.page_size, type: 3 }
       setFilters(reSetFilters)
       fetchParamsRef.current = reSetFilters
