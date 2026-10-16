@@ -55,7 +55,7 @@ export function InsideTable(props: { item: any }) {
     const fetchData = async () => {
       try {
         setLoading(true)
-        const { items } = await getTestTaskConcurrentDetail('task_id=' + props.item.id + '&p=1&page_size=1000')
+        const { items } = await getTestTaskConcurrentDetail('task_id=' + props.item.id + '&p=1&page_size=10000')
         setData(items)
       } finally {
         setLoading(false)
@@ -98,7 +98,7 @@ export function TestModuleConcurrencyViewer(props: {
   const query = useQuery({
     queryKey: [],
     queryFn: async () => {
-      const { models, concurrent, total_count, ...rest } = fetchParamsRef.current
+      const { models, rpm, duration, ...rest } = fetchParamsRef.current
       const params = new URLSearchParams(Object.entries(rest).map(([k, v]) => [k, String(v)]))
       return requireServerSuccess(await getTestTaskList(params))
     },
@@ -151,21 +151,21 @@ export function TestModuleConcurrencyViewer(props: {
     setFilters((previous) => ({ ...previous, ...patch, p: 1 }))
 
   const createTestTaskFun = async () => {
-    const { channel_id, question_group_id, models, concurrent, total_count } = filters
+    const { channel_id, question_group_id, models, rpm, duration } = filters
   
     // 1. 先做安全数字转换
     const channelId = Number(channel_id)
     const questionGroupId = Number(question_group_id)
-    const concurrentNum = Number(concurrent)
-    const totalCountNum = Number(total_count)
+    const rpmNum = Number(rpm)
+    const durationNum = Number(duration)
   
     // 2. 校验：非空 + 合法正整数
     if (
       isNaN(channelId) || channelId <= 0 ||
       isNaN(questionGroupId) || questionGroupId <= 0 ||
       !Array.isArray(models) || models.length === 0 ||
-      isNaN(concurrentNum) || concurrentNum <= 0 ||
-      isNaN(totalCountNum) || totalCountNum <= 0
+      isNaN(rpmNum) || rpmNum <= 0 ||
+      isNaN(durationNum) || durationNum <= 0
     ) {
       toast.warning('请选择必要条件', { duration: 2000 })
       return
@@ -176,8 +176,8 @@ export function TestModuleConcurrencyViewer(props: {
         channel_id: channelId,
         question_group_id: questionGroupId,
         models,
-        concurrent: concurrentNum,
-        total_count: totalCountNum,
+        rpm: rpmNum,
+        duration: durationNum,
         type: 2,
       })
       toast.success('任务创建成功')

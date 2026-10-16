@@ -67,6 +67,8 @@ export interface testConcurrentFilters {
   concurrent?: string
   total_count?: string
   type?: string | number
+  rpm?: string
+  duration?: string | number
 }
 
 export interface CreateTestTask {
@@ -74,6 +76,8 @@ export interface CreateTestTask {
   channel_id?: number | undefined | null,
   models: string[],
   question_group_id: number,
+  rpm?: string | number,
+  duration?: string | number,
   concurrent?: number,              // type=2 必填, 1~50 并发数量
   total_count?: number              // type=2 必填, 1~1000 总请求数
   consecutive_request_count?: number  // type=1 必填, 1~1000 连续请求数量

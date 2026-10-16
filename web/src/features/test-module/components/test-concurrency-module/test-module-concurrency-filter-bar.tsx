@@ -99,13 +99,13 @@ export function TestModuleConcurrencyFilterBar(props: {
             type='number'
             min={1}
             step='any'
-            value={props.filters.concurrent ?? ''}
+            value={props.filters.rpm ?? ''}
             onChange={(e) => {
               props.onChange({
-                concurrent: e.target.value === '' ? undefined : e.target.value,
+                rpm: e.target.value === '' ? undefined : e.target.value,
               })
             }}
-            placeholder={'并发数量'}
+            placeholder={'rpm'}
             className='h-8 min-w-0 text-sm leading-5'
           />
         </LogsFilterField>
@@ -114,13 +114,13 @@ export function TestModuleConcurrencyFilterBar(props: {
             type='number'
             min={1}
             step='any'
-            value={props.filters.total_count ?? ''}
+            value={props.filters.duration ?? ''}
             onChange={(e) => {
               props.onChange({
-                total_count: e.target.value === '' ? undefined : e.target.value,
+                duration: e.target.value === '' ? undefined : e.target.value,
               })
             }}
-            placeholder={'总请求数'}
+            placeholder={'持续时间'}
             className='h-8 min-w-0 text-sm leading-5'
           />
         </LogsFilterField>
@@ -132,8 +132,8 @@ export function TestModuleConcurrencyFilterBar(props: {
       props.filters.question_group_id,
       props.filters.channel_id,
       props.filters.models,
-      props.filters.concurrent,
-      props.filters.total_count,
+      props.filters.rpm,
+      props.filters.duration,
     ].filter(Boolean).length
   const hasFilters =
     filterCount > 0
