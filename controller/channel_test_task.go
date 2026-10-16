@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -70,13 +69,10 @@ type CreateTestTaskRequest struct {
 	Models                  []string `json:"models"`
 	QuestionGroupId         int      `json:"question_group_id"`
 	ConsecutiveRequestCount int      `json:"consecutive_request_count"`
-	Concurrent              int      `json:"concurrent"` // 并发测试每轮并发数，顺序测试忽略
+	Rpm                     int      `json:"rpm"`      // 并发测试每轮并发数，顺序测试忽略
+	Duration                int      `json:"duration"` // 并发测试每轮并发数，顺序测试忽略
 	TotalCount              int      `json:"total_count"`
 }
-
-// maxTestTaskConcurrent 并发测试单轮并发数上限，防止打爆渠道与本机资源
-// （每次请求都会真实消耗测试账号配额，大并发即大账单）
-const maxTestTaskConcurrent = 50
 
 // CreateTestTask 新增测试任务：对指定渠道 + 一组模型，测试某个问题分组下的全部问题。
 // 一个任务内依次执行：每个模型 × 每道题 各测一次，明细行各自记录模型。
@@ -86,12 +82,9 @@ func CreateTestTask(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if request.Concurrent > maxTestTaskConcurrent {
-		common.ApiErrorMsg(c, fmt.Sprintf("并发数不能超过 %d", maxTestTaskConcurrent))
-		return
-	}
-	if request.Type == model.TestTaskTypeConcurrent && request.Concurrent < 1 {
-		common.ApiErrorMsg(c, "并发测试必须指定并发数（concurrent >= 1）")
+
+	if request.Type == model.TestTaskTypeConcurrent && request.Rpm < 1 {
+		common.ApiErrorMsg(c, "RPM测试必须指定RPM数（rpm >= 1）")
 		return
 	}
 	if request.ChannelId == 0 {
@@ -149,7 +142,8 @@ func CreateTestTask(c *gin.Context) {
 			ChannelId:               request.ChannelId,
 			Model:                   m,
 			QuestionGroupId:         request.QuestionGroupId,
-			Concurrent:              request.Concurrent,
+			Rpm:                     request.Rpm,
+			Duration:                request.Duration,
 			ConsecutiveRequestCount: request.ConsecutiveRequestCount,
 			TotalCount:              totalCount,
 		}

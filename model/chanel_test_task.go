@@ -29,7 +29,8 @@ type TestTask struct {
 	Model                   string `json:"model" gorm:"type:text"` // 逗号分隔的多个模型名
 	QuestionGroupId         int    `json:"question_group_id" gorm:"index"`
 	ConsecutiveRequestCount int    `json:"consecutive_request_count"`
-	Concurrent              int    `json:"concurrent"` // 并发模式下每轮的并发数，顺序模式忽略
+	Rpm                     int    `json:"rpm"` // 并发模式下每轮的并发数，顺序模式忽略
+	Duration                int    `json:"duration"`
 	Status                  int    `json:"status"`
 	TotalTime               int    `json:"total_time"`
 	TotalCount              int    `json:"total_count"`
