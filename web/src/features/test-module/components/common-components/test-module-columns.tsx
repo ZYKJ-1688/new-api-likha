@@ -22,6 +22,7 @@ import { ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { formatTimestamp } from '@/lib/format'
 
 import { STATUS_CONFIG, QUEST_STATUS_CONFIG, TASK_STATUS_CONFIG } from '../../api'
 import type { AuditLog } from '../../api'
@@ -288,6 +289,19 @@ export function useInsideTableColumns () {
       meta: { label: 'token吞吐率' },
     },
     {
+      accessorKey: 'created_time',
+      header: '创建时间',
+      size: 60,
+      cell: ({ row }) => (
+        <>
+          <span className='font-mono'>
+            {formatTimestamp(row.original?.created_time) ?? '-'}
+          </span>
+        </>
+      ),
+      meta: { label: '创建时间' },
+    },
+    {
       accessorKey: 'status',
       header: '状态',
       size: 40,
@@ -385,24 +399,27 @@ export function useTestModuleCounColumns () {
         meta: { label: '开始时间' },
       },
       {
-        id: 'concurrent',
-        header: '并发数量',
+        id: 'rpm',
+        header: 'rpm',
         size: 70,
         enableHiding: false,
         cell: ({ row }) => (
-          <span className='font-mono'>{row.original?.concurrent ?? '—'}</span>
+          <span className='font-mono'>{row.original?.rpm ?? '—'}</span>
         ),
-        meta: { label: '并发数量' },
+        meta: { label: 'rpm' },
       },
       {
-        id: 'total_count',
-        header: '总请求数',
+        id: 'duration',
+        header: '持续时间',
         size: 70,
         enableHiding: false,
         cell: ({ row }) => (
-          <span className='font-mono'>{row.original?.total_count ?? '—'}</span>
+          <>
+            <span className='font-mono'>{row.original?.duration ?? '—'}</span>
+            <span className='ml-1'>分钟</span>
+          </>
         ),
-        meta: { label: '总请求数' },
+        meta: { label: '持续时间' },
       },
       {
         id: 'status',
