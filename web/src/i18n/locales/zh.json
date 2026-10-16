@@ -5822,7 +5822,7 @@
     "Test Model": "测试模型",
     "Test Module": "渠道测试",
     "Service Testing": "服务测试",
-    "Concurrency Testing": "并发测试",
+    "Concurrency Testing": "RPM测试",
     "Injection Testing": "注入注水测试",
     "Test models and prompts from the browser": "在浏览器中测试模型和提示词",
     "Test selected models": "测试所选模型",
