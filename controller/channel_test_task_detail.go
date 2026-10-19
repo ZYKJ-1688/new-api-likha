@@ -12,7 +12,7 @@ import (
 )
 
 // GetChannelTestTaskDetails 获取测试任务明细列表，支持分页 ?p=页码&page_size=每页条数（上限 100），
-// 可组合 ?task_id=xxx 过滤所属任务
+// 可组合 ?task_id=xxx 过滤所属任务、?status=xxx 按执行结果过滤（1 成功 2 失败）
 func GetChannelTestTaskDetails(c *gin.Context) {
 	taskId := 0
 	if taskStr := c.Query("task_id"); taskStr != "" {
@@ -22,8 +22,20 @@ func GetChannelTestTaskDetails(c *gin.Context) {
 			return
 		}
 	}
+	status := 0
+	if statusStr := c.Query("status"); statusStr != "" {
+		var err error
+		if status, err = strconv.Atoi(statusStr); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		if status != model.TestTaskDetailStatusSuccess && status != model.TestTaskDetailStatusFailed {
+			common.ApiErrorMsg(c, "status 必须为 1（成功）或 2（失败）")
+			return
+		}
+	}
 	pageInfo := common.GetPageQuery(c)
-	details, total, err := model.GetChannelTestTaskDetail(taskId, pageInfo.GetPage(), pageInfo.GetPageSize())
+	details, total, err := model.GetChannelTestTaskDetail(taskId, status, pageInfo.GetPage(), pageInfo.GetPageSize())
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -65,7 +77,7 @@ func GetChannelTestTaskStats(c *gin.Context) {
 		common.ApiErrorMsg(c, "缺少任务 ID")
 		return
 	}
-	details, _, err := model.GetChannelTestTaskDetail(taskId, 0, 0)
+	details, _, err := model.GetChannelTestTaskDetail(taskId, 0, 0, 0)
 	if err != nil {
 		common.ApiError(c, err)
 		return

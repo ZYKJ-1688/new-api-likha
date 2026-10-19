@@ -1,9 +1,12 @@
 package model
 
-import "time"
+import (
+	"time"
+)
 
 type TestTaskDetail struct {
 	Id                    int     `json:"id" gorm:"primaryKey"`
+	RequestId             string  `json:"request_id" gorm:"type:varchar(64);index"`
 	TaskId                int     `json:"task_id" gorm:"index"`
 	QuestionId            int     `json:"question_id"`
 	ChannelId             int     `json:"channel_id"`
@@ -47,15 +50,19 @@ type TestTaskDetailInfo struct {
 	QuestionGroupName string `json:"question_group_name"`
 }
 
-// GetChannelTestTaskDetail 按 task_id 过滤归属任务（task_id > 0）；
+// GetChannelTestTaskDetail 按 task_id 过滤归属任务（taskId > 0），
+// 按 status 过滤执行结果（status > 0，1 成功 2 失败）；
 // LEFT JOIN 带出渠道名称；问题分组名称经所属任务连出（任务记录的是测试时的
 // 分组，问题事后挪组不影响历史明细）；pageSize > 0 时分页并返回总数，否则返回全部
-func GetChannelTestTaskDetail(task_id int, page int, pageSize int) ([]TestTaskDetailInfo, int64, error) {
+func GetChannelTestTaskDetail(taskId int, status int, page int, pageSize int) ([]TestTaskDetailInfo, int64, error) {
 	var tasks []TestTaskDetailInfo
 	var total int64
 	query := DB.Model(&TestTaskDetail{})
-	if task_id > 0 {
-		query = query.Where("channel_test_task_detail.task_id = ?", task_id)
+	if taskId > 0 {
+		query = query.Where("channel_test_task_detail.task_id = ?", taskId)
+	}
+	if status > 0 {
+		query = query.Where("channel_test_task_detail.status = ?", status)
 	}
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
