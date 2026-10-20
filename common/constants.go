@@ -60,7 +60,7 @@ var (
 var OptionMap map[string]string
 var OptionMapRWMutex sync.RWMutex
 
-var ItemsPerPage = 10
+var ItemsPerPage = 100
 var MaxRecentItems = 1000
 
 var PasswordLoginEnabled = true
