@@ -304,11 +304,11 @@ export function useInsideTableColumns () {
     {
       accessorKey: 'request_id',
       header: 'requestId',
-      size: 60,
+      size: 80,
       cell: ({ row }) => (
         <>
           <span className='font-mono'>
-            {formatTimestamp(row.original?.request_id) ?? '-'}
+            {row.original.request_id ?? '-'}
           </span>
         </>
       ),
