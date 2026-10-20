@@ -27,6 +27,7 @@ func setupAuthSessionTestDB(t *testing.T) *model.User {
 	previousIssuanceWindow := common.UserSessionIssuanceWindowSeconds
 	previousRevokedRetention := common.UserSessionRevokedRetentionDays
 	previousAlertThreshold := common.UserSessionHourlyAlertThreshold
+	previousEvictOnLimit := common.UserSessionEvictOnLimit
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	sqlDB, err := db.DB()
@@ -40,6 +41,7 @@ func setupAuthSessionTestDB(t *testing.T) *model.User {
 	common.UserSessionIssuanceWindowSeconds = int64(common.DefaultUserSessionIssuanceWindowSeconds)
 	common.UserSessionRevokedRetentionDays = common.DefaultUserSessionRevokedRetentionDays
 	common.UserSessionHourlyAlertThreshold = common.DefaultUserSessionHourlyAlertThreshold
+	common.UserSessionEvictOnLimit = common.DefaultUserSessionEvictOnLimit
 	t.Cleanup(func() {
 		model.DB = previousDB
 		common.RedisEnabled = previousRedis
@@ -48,6 +50,7 @@ func setupAuthSessionTestDB(t *testing.T) *model.User {
 		common.UserSessionIssuanceWindowSeconds = previousIssuanceWindow
 		common.UserSessionRevokedRetentionDays = previousRevokedRetention
 		common.UserSessionHourlyAlertThreshold = previousAlertThreshold
+		common.UserSessionEvictOnLimit = previousEvictOnLimit
 		_ = sqlDB.Close()
 	})
 	user := &model.User{
@@ -95,7 +98,7 @@ func cachedLoginSessionKey(t *testing.T, server *miniredis.Miniredis) string {
 	return ""
 }
 
-func TestCreateLoginSessionEnforcesActiveLimitAcrossAuthVersions(t *testing.T) {
+func TestCreateLoginSessionEvictsLeastActiveAtLimitAcrossAuthVersions(t *testing.T) {
 	useTestSessionSecret(t)
 	user := setupAuthSessionTestDB(t)
 	common.UserSessionActiveLimit = 50
@@ -125,11 +128,77 @@ func TestCreateLoginSessionEnforcesActiveLimitAcrossAuthVersions(t *testing.T) {
 	_, err := CreateLoginSession(user.Id, "password", "127.0.0.1", "test-agent")
 	require.NoError(t, err, "49 active sessions must allow creation of the 50th")
 
+	// The stale-auth-version row counts toward the limit; the 51st login evicts
+	// the least recently active session instead of being rejected.
+	bundle, err := CreateLoginSession(user.Id, "password", "127.0.0.1", "test-agent")
+	require.NoError(t, err)
+	require.NotEmpty(t, bundle.RefreshToken)
+	var evicted model.UserSession
+	require.NoError(t, model.DB.First(&evicted, "sid = ?", "active-limit-48").Error)
+	assert.Equal(t, model.UserSessionStatusRevoked, evicted.Status)
+	assert.Equal(t, "limit_eviction", evicted.RevokedReason)
+	var staleRow model.UserSession
+	require.NoError(t, model.DB.First(&staleRow, "sid = ?", "active-limit-00").Error)
+	assert.Equal(t, model.UserSessionStatusActive, staleRow.Status, "the most recently active row must survive eviction")
+	var totalCount, activeCount int64
+	require.NoError(t, model.DB.Model(&model.UserSession{}).Count(&totalCount).Error)
+	require.NoError(t, model.DB.Model(&model.UserSession{}).Where("status = ?", model.UserSessionStatusActive).Count(&activeCount).Error)
+	assert.Equal(t, int64(51), totalCount)
+	assert.Equal(t, int64(50), activeCount)
+
+	// Disabling the switch restores the original 409 contract.
+	common.UserSessionEvictOnLimit = false
 	_, err = CreateLoginSession(user.Id, "password", "127.0.0.1", "test-agent")
 	assert.ErrorIs(t, err, model.ErrUserSessionLimit)
-	var count int64
-	require.NoError(t, model.DB.Model(&model.UserSession{}).Count(&count).Error)
-	assert.Equal(t, int64(50), count)
+	require.NoError(t, model.DB.Model(&model.UserSession{}).Where("status = ?", model.UserSessionStatusActive).Count(&activeCount).Error)
+	assert.Equal(t, int64(50), activeCount, "a rejected login must not change any session")
+}
+
+func TestCreateLoginSessionEvictsByLastActiveAtNotCreationOrder(t *testing.T) {
+	useTestSessionSecret(t)
+	user := setupAuthSessionTestDB(t)
+	common.UserSessionActiveLimit = 2
+	now := time.Now().Unix()
+	rows := []model.UserSession{
+		{
+			SID: "evict-created-later-but-idle", UserID: user.Id, Version: 1, UserAuthVersion: user.AuthVersion,
+			Status: model.UserSessionStatusActive, RefreshHash: "hash-idle", LoginMethod: "password",
+			CreatedAt: now, LastActiveAt: now - 7200, ExpiresAt: now + 3600,
+		},
+		{
+			SID: "evict-created-earlier-but-recent", UserID: user.Id, Version: 1, UserAuthVersion: user.AuthVersion,
+			Status: model.UserSessionStatusActive, RefreshHash: "hash-recent", LoginMethod: "password",
+			CreatedAt: now - 86400, LastActiveAt: now, ExpiresAt: now + 3600,
+		},
+	}
+	require.NoError(t, model.DB.Create(&rows).Error)
+
+	_, err := CreateLoginSession(user.Id, "password", "127.0.0.1", "test-agent")
+	require.NoError(t, err)
+	var idle model.UserSession
+	require.NoError(t, model.DB.First(&idle, "sid = ?", "evict-created-later-but-idle").Error)
+	assert.Equal(t, model.UserSessionStatusRevoked, idle.Status, "eviction must follow last_active_at, not creation order")
+	var recent model.UserSession
+	require.NoError(t, model.DB.First(&recent, "sid = ?", "evict-created-earlier-but-recent").Error)
+	assert.Equal(t, model.UserSessionStatusActive, recent.Status)
+}
+
+func TestCreateLoginSessionAtActiveLimitStillRejectsWhenIssuanceWindowFull(t *testing.T) {
+	useTestSessionSecret(t)
+	user := setupAuthSessionTestDB(t)
+	common.UserSessionActiveLimit = 1
+	common.UserSessionIssuanceLimit = 1
+
+	_, err := CreateLoginSession(user.Id, "password", "127.0.0.1", "test-agent")
+	require.NoError(t, err)
+
+	// Both counters are full: the issuance limit must win and no session may
+	// be evicted for a login that is rejected anyway.
+	_, err = CreateLoginSession(user.Id, "password", "127.0.0.1", "test-agent")
+	assert.ErrorIs(t, err, model.ErrUserSessionIssuanceLimit)
+	var activeCount int64
+	require.NoError(t, model.DB.Model(&model.UserSession{}).Where("status = ?", model.UserSessionStatusActive).Count(&activeCount).Error)
+	assert.Equal(t, int64(1), activeCount, "a login rejected by the issuance limit must not evict sessions")
 }
 
 func TestCreateLoginSessionEnforcesIssuanceLimitAcrossAllStatuses(t *testing.T) {

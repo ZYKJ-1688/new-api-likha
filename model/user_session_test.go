@@ -42,24 +42,27 @@ func (setMiniRedisTimeOnEvalHook) AfterProcessPipeline(context.Context, []redis.
 
 func setupUserSessionTest(t *testing.T) {
 	t.Helper()
-	require.NoError(t, DB.AutoMigrate(&User{}, &UserSession{}))
+	require.NoError(t, DB.AutoMigrate(&User{}, &UserSession{}, &TwoFA{}, &PasskeyCredential{}))
 	require.NoError(t, DB.Exec("DELETE FROM user_sessions").Error)
 	oldRedisEnabled := common.RedisEnabled
 	oldActiveLimit := common.UserSessionActiveLimit
 	oldIssuanceLimit := common.UserSessionIssuanceLimit
 	oldIssuanceWindow := common.UserSessionIssuanceWindowSeconds
 	oldRevokedRetention := common.UserSessionRevokedRetentionDays
+	oldEvictOnLimit := common.UserSessionEvictOnLimit
 	common.RedisEnabled = false
 	common.UserSessionActiveLimit = common.DefaultUserSessionActiveLimit
 	common.UserSessionIssuanceLimit = common.DefaultUserSessionIssuanceLimit
 	common.UserSessionIssuanceWindowSeconds = int64(common.DefaultUserSessionIssuanceWindowSeconds)
 	common.UserSessionRevokedRetentionDays = common.DefaultUserSessionRevokedRetentionDays
+	common.UserSessionEvictOnLimit = common.DefaultUserSessionEvictOnLimit
 	t.Cleanup(func() {
 		common.RedisEnabled = oldRedisEnabled
 		common.UserSessionActiveLimit = oldActiveLimit
 		common.UserSessionIssuanceLimit = oldIssuanceLimit
 		common.UserSessionIssuanceWindowSeconds = oldIssuanceWindow
 		common.UserSessionRevokedRetentionDays = oldRevokedRetention
+		common.UserSessionEvictOnLimit = oldEvictOnLimit
 	})
 }
 
@@ -454,6 +457,96 @@ func TestListActiveUserSessionsKeepsCurrentAndBoundsOtherSessions(t *testing.T) 
 	sessionsWithoutCurrent, err := ListActiveUserSessions(1007, "missing-current", now)
 	require.NoError(t, err)
 	assert.Len(t, sessionsWithoutCurrent, userSessionListLimit, "a missing current SID must not reduce the total list limit")
+}
+
+func TestRevokeLeastActiveUserSessionsEvictsOldestValidFirst(t *testing.T) {
+	setupUserSessionTest(t)
+	now := time.Now().Unix()
+	createUserSessionTestUser(t, 1012, 1)
+	rows := []UserSession{
+		*newTestUserSession("evict-recent", 1012, now-60),
+		*newTestUserSession("evict-already-revoked", 1012, now-7200),
+		*newTestUserSession("evict-expired", 1012, now-3600),
+		*newTestUserSession("evict-idle", 1012, now-1800),
+		*newTestUserSession("evict-stale-version", 1012, now-3000),
+	}
+	rows[0].LastActiveAt = now
+	rows[1].Status = UserSessionStatusRevoked
+	rows[1].RevokedAt = now - 1
+	rows[2].ExpiresAt = now - 1
+	rows[3].CreatedAt = now
+	rows[4].UserAuthVersion = 99
+	require.NoError(t, DB.Create(&rows).Error)
+
+	_, err := RevokeLeastActiveUserSessions(1012, 0, "limit_eviction")
+	assert.ErrorIs(t, err, ErrUserSessionInvalid, "a non-positive eviction count must be rejected")
+
+	revoked, err := RevokeLeastActiveUserSessions(1012, 2, "limit_eviction")
+	require.NoError(t, err)
+	require.Len(t, revoked, 2)
+	revokedSIDs := make([]string, 0, len(revoked))
+	for i := range revoked {
+		revokedSIDs = append(revokedSIDs, revoked[i].SID)
+	}
+	// The two least recently active rows must be evicted; a stale auth version
+	// counts as active and creation order must not influence eviction.
+	assert.ElementsMatch(t, []string{"evict-stale-version", "evict-idle"}, revokedSIDs)
+
+	for sid, expected := range map[string]string{
+		"evict-recent":          UserSessionStatusActive,
+		"evict-already-revoked": UserSessionStatusRevoked,
+		"evict-expired":         UserSessionStatusActive,
+		"evict-stale-version":   UserSessionStatusRevoked,
+		"evict-idle":            UserSessionStatusRevoked,
+	} {
+		stored, getErr := GetUserSessionBySID(sid)
+		require.NoError(t, getErr, sid)
+		assert.Equal(t, expected, stored.Status, sid)
+	}
+	evicted, err := GetUserSessionBySID("evict-stale-version")
+	require.NoError(t, err)
+	assert.Equal(t, "limit_eviction", evicted.RevokedReason)
+}
+
+func TestCreateUserSessionFromLoginFlowEvictsAtActiveLimit(t *testing.T) {
+	setupUserSessionTest(t)
+	common.UserSessionActiveLimit = 1
+	common.UserSessionIssuanceLimit = 100
+	now := time.Now().Unix()
+	createUserSessionTestUser(t, 1013, 1)
+	require.NoError(t, CreateUserSession(newTestUserSession("flow-evict-existing", 1013, now)))
+
+	token, _, err := CreateAuthFlow(AuthFlowCreate{
+		Purpose: AuthFlowPurposeLoginVerification, UserId: 1013,
+		Payload: "{}", ExpiresAt: time.Now().Add(time.Minute),
+	})
+	require.NoError(t, err)
+	require.NoError(t, CreateUserSessionFromLoginFlow(token, newTestUserSession("flow-evict-new", 1013, now), func(_ *gorm.DB, _ *AuthFlow, _ *UserVerificationState) error {
+		return nil
+	}))
+
+	existing, err := GetUserSessionBySID("flow-evict-existing")
+	require.NoError(t, err)
+	assert.Equal(t, UserSessionStatusRevoked, existing.Status)
+	assert.Equal(t, "limit_eviction", existing.RevokedReason)
+	created, err := GetUserSessionBySID("flow-evict-new")
+	require.NoError(t, err)
+	assert.Equal(t, UserSessionStatusActive, created.Status)
+
+	common.UserSessionEvictOnLimit = false
+	require.NoError(t, CreateUserSession(newTestUserSession("flow-limit-existing", 1013, now+1)))
+	token, _, err = CreateAuthFlow(AuthFlowCreate{
+		Purpose: AuthFlowPurposeLoginVerification, UserId: 1013,
+		Payload: "{}", ExpiresAt: time.Now().Add(time.Minute),
+	})
+	require.NoError(t, err)
+	err = CreateUserSessionFromLoginFlow(token, newTestUserSession("flow-limit-new", 1013, now+1), func(_ *gorm.DB, _ *AuthFlow, _ *UserVerificationState) error {
+		return nil
+	})
+	assert.ErrorIs(t, err, ErrUserSessionLimit)
+	stillActive, err := GetUserSessionBySID("flow-limit-existing")
+	require.NoError(t, err)
+	assert.Equal(t, UserSessionStatusActive, stillActive.Status)
 }
 
 func TestRevokeUserSessionsReturnsCumulativeProgressAndSupportsRetry(t *testing.T) {

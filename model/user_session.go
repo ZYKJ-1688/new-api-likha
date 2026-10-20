@@ -735,48 +735,117 @@ func revokeUserSessions(userID int, excludedSID, reason string) (int64, error) {
 		if len(candidates) == 0 {
 			return totalAffected, nil
 		}
-		for i := range candidates {
-			if err := writeUserSessionDenyFence(&candidates[i], UserSessionStatusRevoking, now, reason); err != nil {
-				return totalAffected, err
-			}
-		}
-
-		sids := make([]string, 0, len(candidates))
-		for i := range candidates {
-			sids = append(sids, candidates[i].SID)
-		}
-		var affected int64
 		var revoked []UserSession
 		err := DB.Transaction(func(tx *gorm.DB) error {
-			if err := lockForUpdate(tx).Where("sid IN ? AND status = ?", sids, UserSessionStatusActive).Find(&revoked).Error; err != nil {
-				return err
-			}
-			if len(revoked) == 0 {
-				return nil
-			}
-			lockedSIDs := make([]string, 0, len(revoked))
-			for i := range revoked {
-				lockedSIDs = append(lockedSIDs, revoked[i].SID)
-			}
-			result := tx.Model(&UserSession{}).Where("sid IN ? AND status = ?", lockedSIDs, UserSessionStatusActive).Updates(map[string]any{
-				"status":         UserSessionStatusRevoked,
-				"revoked_at":     now,
-				"revoked_reason": reason,
-			})
-			affected = result.RowsAffected
-			return result.Error
+			var err error
+			revoked, err = revokeUserSessionCandidates(tx, candidates, reason, now)
+			return err
 		})
 		if err != nil {
 			return totalAffected, err
 		}
-		totalAffected += affected
-		for i := range revoked {
-			revoked[i].Status = UserSessionStatusRevoked
-			revoked[i].RevokedAt = now
-			revoked[i].RevokedReason = reason
-			if err := writeUserSessionCache(revoked[i].cacheEntry(), time.Time{}); err != nil {
-				common.SysLog("failed to finalize bulk user session revoke tombstone: " + err.Error())
-			}
+		totalAffected += int64(len(revoked))
+		publishRevokedUserSessions(revoked)
+	}
+}
+
+// RevokeLeastActiveUserSessions revokes the count least recently active
+// sessions of a user, oldest first, in one transaction and returns the revoked
+// rows. It makes room for a new login when the active session limit is
+// reached; sessions from stale auth versions count toward that limit and are
+// equally evictable.
+func RevokeLeastActiveUserSessions(userID int, count int64, reason string) ([]UserSession, error) {
+	if userID <= 0 || count <= 0 {
+		return nil, ErrUserSessionInvalid
+	}
+	now := time.Now().Unix()
+	var revoked []UserSession
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		revoked, err = revokeLeastActiveUserSessions(tx, userID, count, reason, now)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	publishRevokedUserSessions(revoked)
+	return revoked, nil
+}
+
+func revokeLeastActiveUserSessions(tx *gorm.DB, userID int, count int64, reason string, now int64) ([]UserSession, error) {
+	var revoked []UserSession
+	for int64(len(revoked)) < count {
+		batch := min(count-int64(len(revoked)), int64(userSessionRevokeBatchSize))
+		var candidates []UserSession
+		if err := tx.Where(
+			"user_id = ? AND status = ? AND expires_at > ?", userID, UserSessionStatusActive, now,
+		).Order("last_active_at").Order("created_at").Order("sid").Limit(int(batch)).Find(&candidates).Error; err != nil {
+			return nil, err
+		}
+		if len(candidates) == 0 {
+			break
+		}
+		batchRevoked, err := revokeUserSessionCandidates(tx, candidates, reason, now)
+		if err != nil {
+			return nil, err
+		}
+		if len(batchRevoked) == 0 {
+			break
+		}
+		revoked = append(revoked, batchRevoked...)
+	}
+	return revoked, nil
+}
+
+// revokeUserSessionCandidates applies the shared deny-fence → locked-update
+// revoke protocol to a candidate list inside the caller's transaction. It does
+// not publish final revoked tombstones; the caller does that after its own
+// transaction commits.
+func revokeUserSessionCandidates(tx *gorm.DB, candidates []UserSession, reason string, now int64) ([]UserSession, error) {
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+	for i := range candidates {
+		if err := writeUserSessionDenyFence(&candidates[i], UserSessionStatusRevoking, now, reason); err != nil {
+			return nil, err
+		}
+	}
+
+	sids := make([]string, 0, len(candidates))
+	for i := range candidates {
+		sids = append(sids, candidates[i].SID)
+	}
+	var revoked []UserSession
+	if err := lockForUpdate(tx).Where("sid IN ? AND status = ?", sids, UserSessionStatusActive).Find(&revoked).Error; err != nil {
+		return nil, err
+	}
+	if len(revoked) == 0 {
+		return nil, nil
+	}
+	lockedSIDs := make([]string, 0, len(revoked))
+	for i := range revoked {
+		lockedSIDs = append(lockedSIDs, revoked[i].SID)
+	}
+	result := tx.Model(&UserSession{}).Where("sid IN ? AND status = ?", lockedSIDs, UserSessionStatusActive).Updates(map[string]any{
+		"status":         UserSessionStatusRevoked,
+		"revoked_at":     now,
+		"revoked_reason": reason,
+	})
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	for i := range revoked {
+		revoked[i].Status = UserSessionStatusRevoked
+		revoked[i].RevokedAt = now
+		revoked[i].RevokedReason = reason
+	}
+	return revoked, nil
+}
+
+func publishRevokedUserSessions(revoked []UserSession) {
+	for i := range revoked {
+		if err := writeUserSessionCache(revoked[i].cacheEntry(), time.Time{}); err != nil {
+			common.SysLog("failed to finalize bulk user session revoke tombstone: " + err.Error())
 		}
 	}
 }

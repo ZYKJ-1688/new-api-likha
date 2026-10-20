@@ -148,6 +148,7 @@ func initUserSessionSettings() {
 	UserSessionIssuanceWindowSeconds = int64(positiveUserSessionEnv("USER_SESSION_ISSUANCE_WINDOW_SECONDS", DefaultUserSessionIssuanceWindowSeconds))
 	UserSessionRevokedRetentionDays = positiveUserSessionEnv("USER_SESSION_REVOKED_RETENTION_DAYS", DefaultUserSessionRevokedRetentionDays)
 	UserSessionHourlyAlertThreshold = positiveUserSessionEnv("USER_SESSION_HOURLY_ALERT_THRESHOLD", DefaultUserSessionHourlyAlertThreshold)
+	UserSessionEvictOnLimit = GetEnvOrDefaultBool("USER_SESSION_EVICT_ON_LIMIT", DefaultUserSessionEvictOnLimit)
 
 	const secondsPerDay = 24 * 60 * 60
 	if int64(UserSessionRevokedRetentionDays) > math.MaxInt64/secondsPerDay {

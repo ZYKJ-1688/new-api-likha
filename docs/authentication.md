@@ -81,13 +81,15 @@
 - `USER_SESSION_ISSUANCE_LIMIT`（默认 `100`）和 `USER_SESSION_ISSUANCE_WINDOW_SECONDS`（默认 `86400`）：统计窗口内该用户创建的所有 Session，包含已撤销和旧鉴权版本的记录。达到上限时返回 `429 AUTH_SESSION_ISSUANCE_LIMIT`。
 - 这两次计数与插入不加跨数据库锁；极端并发登录可能出现少量超额，但计数失败会拒绝签发，不会降级放行。
 
-升级时已经超过活跃上限的账户不会被自动下线或挤掉旧会话；限制只作用于后续的新 Session 签发。
+`USER_SESSION_EVICT_ON_LIMIT`（默认 `true`）决定达到活跃上限时的行为。开启时，刚通过完整凭证验证的新登录会按 `last_active_at` 从旧到新撤销最久未活跃的 Session 腾出位置（撤销原因为 `limit_eviction`），不再返回 `409`；签发窗口限流仍然先行检查，被 `429` 拒绝的登录不会触发任何撤销。关闭时恢复原有 `409 AUTH_SESSION_LIMIT` 拒绝行为。淘汰只在两条 Session 签发出口（密码直发与 AuthFlow 验证完成）生效，两条路径都会连带清理不可见的旧鉴权版本 active 残留行。
+
+升级时已经超过活跃上限的账户不会被自动下线或挤掉旧会话；限制只作用于后续的新 Session 签发，开启淘汰后下一次登录会自动把数量收敛到上限。
 
 `USER_SESSION_REVOKED_RETENTION_DAYS`（默认 `7`）控制 revoked 行的审计保留期。签发计数依赖窗口内的行仍存在，因此签发窗口不得超过 revoked 保留期。如果配置超出，启动时会记录告警并将实际窗口钳制到保留期，避免提前删除 revoked 行导致限流计数被低估。
 
 定时清理即使发现 `expires_at` 已过期，也不会删除 `created_at` 仍落在实际签发窗口内的行；尚未达到 revoked 保留期的撤销记录同样会继续保留。这样在扩大配置窗口时，过期清理不会静默削弱签发计数或审计保留。
 
-活跃数量会计入状态仍为 active 但 `user_auth_version` 已过期的异常残留行，而设备列表只展示当前鉴权版本。因此遇到 `AUTH_SESSION_LIMIT` 时，应优先在仍已登录的设备上执行“撤销其他会话”，该操作会同时清理不可见的旧版本 active 行；没有可用设备时可使用密码重置撤销所有会话。密码重置不会清空签发窗口计数。
+活跃数量会计入状态仍为 active 但 `user_auth_version` 已过期的异常残留行，而设备列表只展示当前鉴权版本。默认开启淘汰时，`AUTH_SESSION_LIMIT` 不会出现在新登录上，不可见的旧版本残留行会在下一次登录时被一并清理；仅当 `USER_SESSION_EVICT_ON_LIMIT=false` 时才需要排障：优先在仍已登录的设备上执行“撤销其他会话”，该操作会同时清理不可见的旧版本 active 行；没有可用设备时可使用密码重置撤销所有会话。密码重置不会清空签发窗口计数。
 
 仅 master 节点每小时分批删除过期 Session 和超过保留期的 revoked Session。`USER_SESSION_HOURLY_ALERT_THRESHOLD`（默认 `5000`）只在最近一小时全局签发量异常时记录告警，不会形成可被滥用的全站登录拒绝开关。
 

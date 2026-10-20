@@ -43,6 +43,9 @@ const (
 	DefaultUserSessionIssuanceWindowSeconds = 24 * 60 * 60
 	DefaultUserSessionRevokedRetentionDays  = 7
 	DefaultUserSessionHourlyAlertThreshold  = 5000
+	// DefaultUserSessionEvictOnLimit revokes the least recently active sessions
+	// when a new login hits UserSessionActiveLimit, instead of rejecting it.
+	DefaultUserSessionEvictOnLimit = true
 )
 
 var (
@@ -51,6 +54,7 @@ var (
 	UserSessionIssuanceWindowSeconds = int64(DefaultUserSessionIssuanceWindowSeconds)
 	UserSessionRevokedRetentionDays  = DefaultUserSessionRevokedRetentionDays
 	UserSessionHourlyAlertThreshold  = DefaultUserSessionHourlyAlertThreshold
+	UserSessionEvictOnLimit          = DefaultUserSessionEvictOnLimit
 )
 
 var OptionMap map[string]string
