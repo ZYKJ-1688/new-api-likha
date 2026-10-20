@@ -16,9 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import React from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { type ExpandedState } from '@tanstack/react-table'
 import { DataTablePage, useDataTable } from '@/components/data-table'
@@ -37,53 +36,68 @@ import { TestModuleFilterBar } from './test-module-filter-bar'
 const EMPTY_LOGS: AuditLog[] = []
 
 export function InsideTable(props: { item: any }) {
+  // 子表格分页状态
+  const insideColumns = useInsideTableColumns()
+  const [filters, setFilters] = useState<testFilters>({ p: 1, page_size: 20 })
 
-  const [loading, setLoading] = useState(false)
-  const [data, setData] = useState<any>([])
+  const insideQuery = useQuery({
+    queryKey: ['testTaskDetail', props.item.id, filters],
+    queryFn: async () => {
+      const sp = new URLSearchParams()
+      sp.set('task_id', String(props.item.id))
+      sp.set('p', String(filters.p))
+      sp.set('page_size', String(filters.page_size))
+      return requireServerSuccess(await getTestTaskDetail(sp.toString()))
+    },
+    enabled: true,
+    retry: false,
+  })
 
-  const columns = useInsideTableColumns()
-  const { table } = useDataTable({
-    data: data,
-    columns: columns,
+  const { table: insideTable } = useDataTable({
+    data: insideQuery.data?.items ?? [],
+    columns: insideColumns,
     enableRowSelection: false,
     enableSorting: false,
     manualFiltering: true,
     manualPagination: true,
+    totalCount: insideQuery.isError ? 0 : (insideQuery.data?.total ?? 0),
+    pagination: { pageIndex: filters.p - 1, pageSize: filters.page_size },
+    onPaginationChange: (updater) => {
+      if (insideQuery.isFetching || insideQuery.isError) return
+      setFilters(prev => {
+        const current = { pageIndex: prev.p - 1, pageSize: prev.page_size }
+        const next = typeof updater === 'function' ? updater(current) : updater
+        return {
+          ...prev,
+          p: next.pageSize === prev.page_size ? next.pageIndex + 1 : 1,
+          page_size: next.pageSize,
+        }
+      })
+    },
   })
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true)
-        const { items } = await getTestTaskDetail('task_id=' + props.item.id + '&p=1&page_size=1000')
-        setData(items)
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetchData()
-  }, [])
-
-  return <div className='flex min-h-0 flex-col h-[400px]'>
-    <DataTablePage
-      table={table}
-      columns={columns}
-      isLoading={loading}
-      className='h-auto min-h-0 flex-1'
-      applyHeaderSize
-      getColumnClassName={() => 'py-2'}
-      showPagination={false}
-      tableClassName='
-      [&_[data-slot=table]]:text-[13px] 
-      [&_[data-slot=table]_td]:text-[13px] 
-      [&_[data-slot=table]_td_*]:text-[13px] 
-      [&_[data-slot=table]_th]:text-[13px] 
-      [&_[data-slot=table]_th_*]:text-[13px] 
-      [&_[data-slot=table]_tbody_tr_td]:!h-auto 
-      [&_[data-slot=table]_tbody_tr_td]:!min-h-0
-      [&_[data-slot=table]_tbody]:bg-white'
-    />
-  </div>
+  return (
+    <div className='flex min-h-0 flex-col h-[400px]'>
+      <DataTablePage
+        table={insideTable}
+        columns={insideColumns}
+        isLoading={insideQuery.isPending}
+        className='h-auto min-h-0 flex-1'
+        applyHeaderSize
+        getColumnClassName={() => 'py-2'}
+        paginationInFooter={false}
+        tableClassName='
+        [&_[data-slot=table]]:text-[13px] 
+        [&_[data-slot=table]_td]:text-[13px] 
+        [&_[data-slot=table]_td_*]:text-[13px] 
+        [&_[data-slot=table]_th]:text-[13px] 
+        [&_[data-slot=table]_th_*]:text-[13px] 
+        [&_[data-slot=table]_tbody_tr_td]:!h-auto 
+        [&_[data-slot=table]_tbody_tr_td]:!min-h-0
+        [&_[data-slot=table]_tbody]:bg-white'
+      />
+    </div>
+  )
 }
 
 export function TestModuleViewer(props: {
