@@ -302,6 +302,19 @@ export function useInsideTableColumns () {
       meta: { label: '创建时间' },
     },
     {
+      accessorKey: 'request_id',
+      header: 'requestId',
+      size: 60,
+      cell: ({ row }) => (
+        <>
+          <span className='font-mono'>
+            {formatTimestamp(row.original?.request_id) ?? '-'}
+          </span>
+        </>
+      ),
+      meta: { label: 'requestId' },
+    },
+    {
       accessorKey: 'status',
       header: '状态',
       size: 40,
@@ -531,7 +544,7 @@ export function useInsideTableCounColumns (task_id: number) {
       cell: ({ row }) => (
         <>
           <span className='text-black !text-[1.2rem] !font-bold'>
-            {row.original.avg ?? '-'}
+            {row.original.avg.toFixed(2) ?? '-'}
           </span>
           <span className='ml-1'>s</span>
         </>

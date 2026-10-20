@@ -55,7 +55,7 @@ export interface testFilters {
   channel_id?: string | undefined | null,
   models?: string[],
   consecutive_request_count?: string | number,
-
+  status?: number,
   type?: string | number
 }
 export interface testConcurrentFilters {
