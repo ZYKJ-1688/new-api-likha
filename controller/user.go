@@ -613,6 +613,15 @@ func generateDefaultSidebarConfig(userRole int) string {
 }
 
 func GetUserModels(c *gin.Context) {
+	modelType := model.ModelTypeText
+	if raw := c.Query("type"); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < model.ModelTypeText || value > model.ModelTypeVideo {
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
+		}
+		modelType = value
+	}
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		id = c.GetInt("id")
@@ -639,10 +648,22 @@ func GetUserModels(c *gin.Context) {
 			groupsToQuery = []string{group}
 		}
 	}
+	enabledModels := service.GetGroupsEnabledModels(groupsToQuery)
+	types, err := model.ResolveModelTypes(enabledModels)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	data := make([]string, 0, len(enabledModels))
+	for _, name := range enabledModels {
+		if types[name] == modelType {
+			data = append(data, name)
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    service.GetGroupsEnabledModels(groupsToQuery),
+		"data":    data,
 	})
 }
 

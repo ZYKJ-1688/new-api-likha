@@ -43,6 +43,25 @@ func TestValidateMetadataValuesModelType(t *testing.T) {
 	assert.NoError(t, ValidateMetadataValues(MetadataValues{Type: ModelTypeVideo}))
 }
 
+func TestResolveModelTypes(t *testing.T) {
+	require.NoError(t, (&Model{ModelName: "resolve-exact-video", Type: ModelTypeVideo}).Insert())
+	require.NoError(t, (&Model{ModelName: "resolve-prefix-", Type: ModelTypeImage, NameRule: NameRulePrefix}).Insert())
+
+	types, err := ResolveModelTypes([]string{
+		"resolve-exact-video",
+		"resolve-prefix-hd",
+		"resolve-unknown",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, ModelTypeVideo, types["resolve-exact-video"])
+	assert.Equal(t, ModelTypeImage, types["resolve-prefix-hd"])
+	assert.Equal(t, ModelTypeText, types["resolve-unknown"])
+
+	empty, err := ResolveModelTypes(nil)
+	require.NoError(t, err)
+	assert.Empty(t, empty)
+}
+
 // modelBeforeType mirrors the models table before the type column existed, so
 // upgrades from existing deployments can be exercised against real engines.
 type modelBeforeType struct {
@@ -85,6 +104,9 @@ func TestModelTypeColumnMigration(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = sqlDB.Close() })
 			t.Cleanup(func() { _ = db.Migrator().DropTable("models") })
+			previousDB := DB
+			DB = db
+			t.Cleanup(func() { DB = previousDB })
 
 			t.Run("upgrade_backfills_text_type", func(t *testing.T) {
 				require.NoError(t, db.AutoMigrate(&modelBeforeType{}))
@@ -111,6 +133,10 @@ func TestModelTypeColumnMigration(t *testing.T) {
 				require.NoError(t, db.Model(&Model{}).Where("model_name = ?", "fresh-model").Update("type", ModelTypeVideo).Error)
 				require.NoError(t, db.First(&loaded, "model_name = ?", "fresh-model").Error)
 				assert.Equal(t, ModelTypeVideo, loaded.Type)
+				types, err := ResolveModelTypes([]string{"fresh-model", "untracked-model"})
+				require.NoError(t, err)
+				assert.Equal(t, ModelTypeVideo, types["fresh-model"])
+				assert.Equal(t, ModelTypeText, types["untracked-model"])
 			})
 		})
 	}

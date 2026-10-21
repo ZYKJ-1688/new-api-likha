@@ -107,6 +107,28 @@ func resolveModelMetadata(records []Model, names []string) map[string]*Model {
 	return resolved
 }
 
+// ResolveModelTypes returns the effective catalog type for each name using
+// metadata precedence (exact, prefix, suffix, contains). Names without
+// matching metadata keep the text default.
+func ResolveModelTypes(names []string) (map[string]int, error) {
+	resolved := make(map[string]int, len(names))
+	if len(names) == 0 {
+		return resolved, nil
+	}
+	var metadata []Model
+	if err := DB.Find(&metadata).Error; err != nil {
+		return nil, err
+	}
+	matched := resolveModelMetadata(metadata, names)
+	for _, name := range names {
+		resolved[name] = ModelTypeText
+		if record := matched[name]; record != nil {
+			resolved[name] = record.Type
+		}
+	}
+	return resolved, nil
+}
+
 // FillModelSquareStates applies the same metadata policy as the public catalog
 // to live routes, then aggregates concrete models for metadata rule rows.
 func FillModelSquareStates(rows []*Model, configured map[string][]int, connections []ModelConnection) error {
