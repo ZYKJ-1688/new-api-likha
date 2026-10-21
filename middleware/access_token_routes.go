@@ -302,6 +302,14 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"POST /api/deployments/:id/extend":                  accessTokenScopeRule("deployment:write"),
 	"DELETE /api/deployments/:id":                       accessTokenScopeRule("deployment:write"),
 
+	// router/api-router.go: /api/file
+	// Upload handlers enforce identity, size and type server-side, so any
+	// valid scoped token may use them (no dedicated file scope exists).
+	"GET /api/file/policy":  accessTokenAnyRule,
+	"POST /api/file/upload": accessTokenAnyRule,
+	// Root-only connectivity check, mirroring other test-connection routes.
+	"POST /api/file/test": accessTokenScopeRule("ops:write"),
+
 	// router/relay-router.go
 	"POST /pg/chat/completions": accessTokenSessionRule,
 }

@@ -473,5 +473,14 @@ func SetApiRouter(router *gin.Engine) {
 			deploymentsRoute.POST("/:id/extend", controller.ExtendDeployment)
 			deploymentsRoute.DELETE("/:id", controller.DeleteDeployment)
 		}
+
+		// Stateless file upload proxied to Aliyun OSS; all OSS_* config comes
+		// from environment variables, nothing is stored in options.
+		fileRoute := apiRouter.Group("/file")
+		{
+			fileRoute.GET("/policy", middleware.UserAuth(), controller.GetFileUploadPolicy)
+			fileRoute.POST("/upload", middleware.UserAuth(), middleware.CriticalRateLimit(), controller.UploadFile)
+			fileRoute.POST("/test", middleware.RootAuth(), controller.TestOssConnection)
+		}
 	}
 }
