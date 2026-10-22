@@ -79,7 +79,7 @@ func Distribute() func(c *gin.Context) {
 					return
 				}
 				// check playground paths that may carry a user-selected group
-				if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") || strings.HasPrefix(c.Request.URL.Path, "/pg/images/generations") {
+				if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") || strings.HasPrefix(c.Request.URL.Path, "/pg/images/generations") || strings.HasPrefix(c.Request.URL.Path, "/pg/videos") {
 					usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
 					playgroundRequest := &dto.PlayGroundRequest{}
 					err = common.UnmarshalBodyReusable(c, playgroundRequest)
@@ -394,7 +394,7 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 		relayMode := relayconstant.RelayModeVideoSubmit
 		c.Set("relay_mode", relayMode)
 		shouldSelectChannel = false
-	} else if strings.Contains(c.Request.URL.Path, "/v1/videos") {
+	} else if strings.Contains(c.Request.URL.Path, "/v1/videos") || strings.Contains(c.Request.URL.Path, "/pg/videos") {
 		//curl https://api.openai.com/v1/videos \
 		//  -H "Authorization: Bearer $OPENAI_API_KEY" \
 		//  -F "model=sora-2" \
@@ -496,7 +496,11 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 		}
 		c.Set("relay_mode", relayMode)
 	}
-	if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") || strings.HasPrefix(c.Request.URL.Path, "/pg/images/generations") {
+	// /pg/videos also serves GET fetches with no request body, so only the
+	// submit method goes through the body-based model/group extraction.
+	if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") ||
+		strings.HasPrefix(c.Request.URL.Path, "/pg/images/generations") ||
+		(c.Request.Method == http.MethodPost && strings.HasPrefix(c.Request.URL.Path, "/pg/videos")) {
 		// playground chat completions / image generations
 		req, err := getModelFromRequest(c)
 		if err != nil {

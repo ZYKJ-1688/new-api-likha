@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/gin-gonic/gin"
@@ -340,4 +341,35 @@ func TestSharedEndpointRebindsToBoundNewAPIExtension(t *testing.T) {
 	require.Nil(t, SetupContextForSelectedChannel(c, channel, "task-model"))
 	assert.Equal(t, "alpha", c.GetString("task_plugin_key"), "the first bound candidate executes regardless of the earlier pin")
 	assert.Equal(t, "alpha", c.MustGet(jsplugin.ContextKeyPinnedEndpoint).(jsplugin.PinnedEndpoint).Plugin.Meta.Key)
+}
+
+// Playground video routes share the /v1/videos model/relay-mode extraction:
+// submissions parse model+group from the body, fetches carry no body and must
+// not attempt model extraction (which would 400 on the empty body).
+func TestGetModelNameAndRequestPlaygroundVideo(t *testing.T) {
+	t.Run("submit parses model and group", func(t *testing.T) {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodPost, "/pg/videos", bytes.NewBufferString(
+			`{"model":"doubao-seedance-2-5-260628","group":"vip","prompt":"a cat"}`))
+		c.Request.Header.Set("Content-Type", "application/json")
+
+		modelRequest, shouldSelectChannel, err := getModelRequest(c)
+		require.NoError(t, err)
+		assert.True(t, shouldSelectChannel)
+		assert.Equal(t, "doubao-seedance-2-5-260628", modelRequest.Model)
+		assert.Equal(t, "vip", modelRequest.Group)
+		assert.Equal(t, relayconstant.RelayModeVideoSubmit, c.GetInt("relay_mode"))
+		assert.Equal(t, "vip", common.GetContextKeyString(c, constant.ContextKeyTokenGroup))
+	})
+
+	t.Run("fetch skips channel selection without a body", func(t *testing.T) {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodGet, "/pg/videos/task-123", nil)
+
+		modelRequest, shouldSelectChannel, err := getModelRequest(c)
+		require.NoError(t, err)
+		assert.False(t, shouldSelectChannel)
+		assert.Empty(t, modelRequest.Model)
+		assert.Equal(t, relayconstant.RelayModeVideoFetchByID, c.GetInt("relay_mode"))
+	})
 }

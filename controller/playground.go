@@ -13,14 +13,23 @@ import (
 )
 
 func Playground(c *gin.Context) {
-	playgroundRelay(c, types.RelayFormatOpenAI)
+	playgroundRelay(c, func(c *gin.Context) { Relay(c, types.RelayFormatOpenAI) })
 }
 
 func PlaygroundImage(c *gin.Context) {
-	playgroundRelay(c, types.RelayFormatOpenAIImage)
+	playgroundRelay(c, func(c *gin.Context) {
+		RelayTaskPluginEndpoint(c, func(c *gin.Context) { Relay(c, types.RelayFormatOpenAIImage) })
+	})
 }
 
-func playgroundRelay(c *gin.Context, relayFormat types.RelayFormat) {
+// PlaygroundVideoSubmit relays a session-authenticated playground video
+// submission through the task-plugin endpoint chain; the endpoint falls back
+// to RelayTask, which resolves the task platform from the channel type.
+func PlaygroundVideoSubmit(c *gin.Context) {
+	playgroundRelay(c, func(c *gin.Context) { RelayTaskPluginEndpoint(c, RelayTask) })
+}
+
+func playgroundRelay(c *gin.Context, relay func(c *gin.Context)) {
 	var newAPIError *types.NewAPIError
 
 	defer func() {
@@ -37,7 +46,9 @@ func playgroundRelay(c *gin.Context, relayFormat types.RelayFormat) {
 		return
 	}
 
-	relayInfo, err := relaycommon.GenRelayInfo(c, relayFormat, nil, nil)
+	// The format only matters for UsingGroup here; the handler passed in
+	// builds its own relay info (RelayTask does the same for video).
+	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatTask, nil, nil)
 	if err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 		return
@@ -60,5 +71,5 @@ func playgroundRelay(c *gin.Context, relayFormat types.RelayFormat) {
 	}
 	_ = middleware.SetupContextForToken(c, tempToken)
 
-	Relay(c, relayFormat)
+	relay(c)
 }

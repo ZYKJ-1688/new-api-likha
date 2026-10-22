@@ -14,6 +14,7 @@ import (
 
 func SetRelayRouter(router *gin.Engine) {
 	router.Use(middleware.CORS())
+	router.Use(middleware.PlaygroundImageResponse())
 	router.Use(middleware.DecompressRequestMiddleware())
 	router.Use(middleware.BodyStorageCleanup()) // 清理请求体存储
 	router.Use(middleware.StatsMiddleware())
@@ -64,11 +65,32 @@ func SetRelayRouter(router *gin.Engine) {
 	playgroundRouter := router.Group("/pg")
 	playgroundRouter.Use(middleware.RouteTag("relay"))
 	playgroundRouter.Use(middleware.SystemPerformanceCheck())
-	playgroundRouter.Use(middleware.UserAuth(), middleware.Distribute())
+	playgroundRouter.Use(middleware.UserAuth())
 	{
-		playgroundRouter.POST("/chat/completions", controller.Playground)
-		playgroundRouter.POST("/images/generations", controller.PlaygroundImage)
+		playgroundRouter.POST("/chat/completions", middleware.Distribute(), controller.Playground)
+		playgroundRouter.POST("/images/generations",
+			middleware.PlaygroundImageNonStreaming(),
+			middleware.PinTaskPluginEndpoint(),
+			middleware.PrepareTaskPluginEndpoint(),
+			middleware.Distribute(),
+			controller.PlaygroundImage)
+	}
 
+	// Playground video routes use session authentication and prepare plugin
+	// requests before channel distribution.
+	playgroundVideoRouter := router.Group("/pg")
+	playgroundVideoRouter.Use(middleware.RouteTag("relay"))
+	playgroundVideoRouter.Use(middleware.SystemPerformanceCheck())
+	playgroundVideoRouter.Use(middleware.UserAuth())
+	{
+		playgroundVideoRouter.POST("/videos",
+			middleware.PinTaskPluginEndpoint(),
+			middleware.TaskPluginEndpointOnly(middleware.ModelRequestRateLimit()),
+			middleware.PrepareTaskPluginEndpoint(),
+			middleware.Distribute(),
+			controller.PlaygroundVideoSubmit)
+		playgroundVideoRouter.GET("/videos/:task_id", middleware.Distribute(), controller.RelayTaskFetch)
+		playgroundVideoRouter.GET("/videos/:task_id/content", controller.VideoProxy)
 	}
 	relayV1Router := router.Group("/v1")
 	relayV1Router.Use(middleware.RouteTag("relay"))
