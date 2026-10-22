@@ -11,13 +11,15 @@ import (
 )
 
 // PlaygroundSubmitResponse keeps the dashboard envelope local to playground
-// task submission (image generation and video). Register it before
+// task submission (image generation and video) and video fetching. Register it before
 // performance checks and authentication so their errors are wrapped too.
 // Other playground routes, including streaming chat, are untouched.
 func PlaygroundSubmitResponse() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if c.Request.Method != http.MethodPost ||
-			(c.Request.URL.Path != "/pg/images/generations" && c.Request.URL.Path != "/pg/videos") {
+		videoFetch := c.Request.Method == http.MethodGet && c.FullPath() == "/pg/videos/:task_id"
+		submit := c.Request.Method == http.MethodPost &&
+			(c.Request.URL.Path == "/pg/images/generations" || c.Request.URL.Path == "/pg/videos")
+		if !submit && !videoFetch {
 			c.Next()
 			return
 		}
@@ -36,10 +38,20 @@ func PlaygroundSubmitResponse() gin.HandlerFunc {
 		errorBody := bytes.TrimSpace(response["error"])
 		hasError := len(errorBody) != 0 && !bytes.Equal(errorBody, []byte("null"))
 		success := capture.status >= 200 && capture.status < 300 && validObject && !hasError && (declaredSuccess == nil || *declaredSuccess)
+		if videoFetch {
+			var code string
+			if rawCode, exists := response["code"]; exists {
+				success = success && common.Unmarshal(rawCode, &code) == nil && code == "success"
+			}
+		}
 		var data common.RawMessage
 		message := ""
 		if success {
 			data = capture.body.Bytes()
+			if videoFetch {
+				data = response["data"]
+				_ = common.Unmarshal(response["message"], &message)
+			}
 		} else {
 			_ = common.Unmarshal(response["message"], &message)
 			if message == "" && hasError {

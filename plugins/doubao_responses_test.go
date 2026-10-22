@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -276,6 +277,104 @@ func TestDoubaoImageSubmission(t *testing.T) {
 // Capability profiles follow the Ark model list: pricing lists only the
 // resolutions each Seedance model offers, reference video input only on
 // Seedance 2.x, and audio output only on Seedance 1.5 pro.
+func TestDoubaoPlaygroundVideoParameters(t *testing.T) {
+	_, plugin := newDoubaoPlugin(t)
+	const modelName = "doubao-seedance-1-0-pro-250528"
+	for _, tc := range []struct {
+		name           string
+		fields         string
+		wantResolution any
+		wantRatio      any
+		wantTier       string
+		invalid        bool
+	}{
+		{"top level", `"resolution":"720p","ratio":"9:16"`, "720p", "9:16", "720p", false},
+		{"metadata", `"metadata":{"resolution":"480p","ratio":"16:9","watermark":true}`, "480p", "16:9", "480p", false},
+		{"top level wins", `"resolution":"720p","ratio":"9:16","size":"1920x1080","metadata":{"resolution":"480p","ratio":"16:9","watermark":true}`, "720p", "9:16", "720p", false},
+		{"null falls back", `"resolution":null,"ratio":null,"metadata":{"resolution":"480p","ratio":"1:1"}`, "480p", "1:1", "480p", false},
+		{"omitted", `"metadata":{}`, nil, nil, "1080p", false},
+		{"size remains estimate only", `"size":"1280x720"`, nil, nil, "720p", false},
+		{"empty resolution", `"resolution":"","metadata":{"resolution":"720p"}`, nil, nil, "", true},
+		{"non-string resolution", `"resolution":720`, nil, nil, "", true},
+		{"unknown resolution", `"resolution":"8k"`, nil, nil, "", true},
+		{"unsupported resolution", `"resolution":"4k"`, nil, nil, "", true},
+		{"metadata cannot bypass resolution validation", `"metadata":{"resolution":"8k"}`, nil, nil, "", true},
+		{"empty ratio", `"ratio":" ","metadata":{"ratio":"9:16"}`, nil, nil, "", true},
+		{"non-string ratio", `"ratio":9`, nil, nil, "", true},
+		{"invalid metadata ratio", `"metadata":{"ratio":9}`, nil, nil, "", true},
+	} {
+		for _, multipartBody := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/multipart=%t", tc.name, multipartBody), func(t *testing.T) {
+				encoded := []byte(`{"model":"` + modelName + `","prompt":"a running cat","seconds":"5",` + tc.fields + `}`)
+				var input map[string]any
+				require.NoError(t, common.Unmarshal(encoded, &input))
+				contentType := "application/json"
+				if multipartBody {
+					// Form values are strings; JSON-only type errors and nulls have no form equivalent.
+					for _, key := range []string{"ratio", "resolution"} {
+						if value, exists := input[key]; exists {
+							if _, isString := value.(string); !isString {
+								return
+							}
+						}
+					}
+					var buffer bytes.Buffer
+					writer := multipart.NewWriter(&buffer)
+					for key, value := range input {
+						text, ok := value.(string)
+						if !ok {
+							data, err := common.Marshal(value)
+							require.NoError(t, err)
+							text = string(data)
+						}
+						require.NoError(t, writer.WriteField(key, text))
+					}
+					require.NoError(t, writer.Close())
+					encoded = buffer.Bytes()
+					contentType = writer.FormDataContentType()
+				}
+				c, _ := gin.CreateTestContext(httptest.NewRecorder())
+				c.Request = httptest.NewRequest(http.MethodPost, "/pg/videos", bytes.NewReader(encoded))
+				c.Request.Header.Set("Content-Type", contentType)
+				// Distribution reads and stores the body before the task adaptor runs.
+				storage, err := common.GetBodyStorage(c)
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = storage.Close() })
+				_, err = storage.Seek(0, io.SeekStart)
+				require.NoError(t, err)
+				c.Request.Body = io.NopCloser(storage)
+				info := &relaycommon.RelayInfo{
+					ChannelMeta:     &relaycommon.ChannelMeta{ChannelBaseUrl: doubaoBaseURL, UpstreamModelName: modelName},
+					OriginModelName: modelName,
+					TaskRelayInfo:   &relaycommon.TaskRelayInfo{PublicTaskID: "task_public"},
+				}
+				adaptor := taskplugin.New(plugin)
+				adaptor.Init(info)
+				// No pre-decoded task_request: exercise the playground's actual DTO parsing.
+				taskErr := adaptor.ValidateRequestAndSetAction(c, info)
+				if tc.invalid {
+					require.NotNil(t, taskErr)
+					assert.Equal(t, http.StatusBadRequest, taskErr.StatusCode)
+					return
+				}
+				require.Nil(t, taskErr)
+				reader, err := adaptor.BuildRequestBody(c, info)
+				require.NoError(t, err)
+				var body map[string]any
+				require.NoError(t, common.DecodeJson(reader, &body))
+				assert.Equal(t, tc.wantResolution, body["resolution"])
+				assert.Equal(t, tc.wantRatio, body["ratio"])
+				if metadata, ok := input["metadata"].(map[string]any); ok {
+					assert.Equal(t, metadata["watermark"], body["watermark"])
+				}
+				facts, err := adaptor.ExtractUsageFactsValidated(c, info)
+				require.NoError(t, err)
+				assert.Equal(t, tc.wantTier, facts["resolution"])
+			})
+		}
+	}
+}
+
 func TestDoubaoSeedanceUsageFacts(t *testing.T) {
 	_, plugin := newDoubaoPlugin(t)
 	const (

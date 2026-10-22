@@ -313,6 +313,51 @@ func TestPlaygroundSubmitResponseEnvelope(t *testing.T) {
 	}
 }
 
+func TestPlaygroundVideoFetchResponseEnvelope(t *testing.T) {
+	const task = `{"task_id":"task_x","status":"IN_PROGRESS","progress":"50%","data":{"seed":9007199254740993}}`
+	const result = `{"code":"success","message":"","data":` + task + `}`
+	for _, tt := range []struct {
+		name, body, expected string
+		status               int
+	}{
+		{"fetch success", result, `{"success":true,"message":"","data":` + task + `}`, 200},
+		{"failed task is still a successful query", `{"code":"success","data":{"task_id":"task_x","status":"FAILURE","fail_reason":"generation failed"}}`, `{"success":true,"message":"","data":{"task_id":"task_x","status":"FAILURE","fail_reason":"generation failed"}}`, 200},
+		{"null result", `{"code":"success","data":null}`, `{"success":true,"message":"","data":null}`, 200},
+		{"missing task", `{"code":"task_not_exist","message":"task_not_exist"}`, `{"success":false,"message":"task_not_exist","data":null}`, 400},
+		{"server error", `{"code":"get_task_failed","message":"lookup failed"}`, `{"success":false,"message":"lookup failed","data":null}`, 500},
+		{"session error", `{"success":false,"message":"not logged in"}`, `{"success":false,"message":"not logged in","data":null}`, 401},
+		{"business error", `{"code":"failed","message":"unavailable","data":null}`, `{"success":false,"message":"unavailable","data":null}`, 200},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			engine := gin.New()
+			engine.Use(middleware.PlaygroundSubmitResponse())
+			engine.Use(func(c *gin.Context) {
+				c.AbortWithStatusJSON(tt.status, common.RawMessage(tt.body))
+			})
+			engine.GET("/pg/videos/:task_id", func(c *gin.Context) { t.Fatal("abort did not stop dispatch") })
+			recorder := httptest.NewRecorder()
+			engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/pg/videos/task_x?poll=1", nil))
+			assert.Equal(t, tt.status, recorder.Code)
+			assert.JSONEq(t, tt.expected, recorder.Body.String())
+			if tt.body == result {
+				assert.Contains(t, recorder.Body.String(), "9007199254740993")
+			}
+		})
+	}
+
+	for _, path := range []string{"/v1/videos/:task_id", "/pg/videos/:task_id/content"} {
+		t.Run(path, func(t *testing.T) {
+			engine := gin.New()
+			engine.Use(middleware.PlaygroundSubmitResponse())
+			engine.GET(path, func(c *gin.Context) { c.Data(200, "application/json", []byte(result)) })
+			recorder := httptest.NewRecorder()
+			engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, strings.ReplaceAll(path, ":task_id", "task_x"), nil))
+			assert.Equal(t, http.StatusOK, recorder.Code)
+			assert.JSONEq(t, result, recorder.Body.String())
+		})
+	}
+}
+
 func TestPlaygroundImageNonStreamingAndIsolation(t *testing.T) {
 	for _, tt := range []struct {
 		name, method, path, body string
@@ -324,7 +369,6 @@ func TestPlaygroundImageNonStreamingAndIsolation(t *testing.T) {
 		{"v1 unchanged", "POST", "/v1/images/generations", `{"stream":true}`, false},
 		{"chat unchanged", "POST", "/pg/chat/completions", `{"stream":true}`, false},
 		{"video submit wrapped", "POST", "/pg/videos", `{"stream":true}`, false},
-		{"video fetch unchanged", "GET", "/pg/videos/task-1", `{"stream":true}`, false},
 		{"other method unchanged", "GET", "/pg/images/generations", `{"stream":true}`, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

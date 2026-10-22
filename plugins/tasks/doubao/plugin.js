@@ -410,7 +410,10 @@ function videoResolution(ctx) {
   const req = ctx.requestBody || {};
   const metadata = req.metadata || {};
   const profile = videoProfile(ctx);
-  const raw = trimmed(metadata.resolution || req.size).toLowerCase();
+  const explicit = req.resolution != null ? req.resolution : metadata.resolution;
+  if (explicit != null && (typeof explicit !== "string" || !SEEDANCE_RESOLUTIONS.includes(explicit.trim().toLowerCase())))
+    throw new Error("resolution must be one of " + SEEDANCE_RESOLUTIONS.join(", "));
+  const raw = trimmed(explicit != null ? explicit : req.size).toLowerCase();
   const recognized = SEEDANCE_RESOLUTIONS.includes(raw) || raw.replace("*", "x").split("x").length === 2;
   if (!recognized) return profile.resolutions.includes("1080p") ? "1080p" : profile.resolutions[profile.resolutions.length - 1];
   const resolution = normalizeResolution(raw);
@@ -801,8 +804,14 @@ export function buildSubmitRequest(ctx) {
   const req = ctx.requestBody;
   const metadata = req.metadata || {};
   // Reject output tiers the model does not offer before any quota is reserved.
-  videoResolution(ctx);
+  const resolution = videoResolution(ctx);
   const body = Object.assign({ model: req.model || "", content: [] }, metadata);
+  if (req.resolution != null || metadata.resolution != null) body.resolution = resolution;
+  const ratio = req.ratio != null ? req.ratio : metadata.ratio;
+  if (ratio != null) {
+    if (typeof ratio !== "string" || !ratio.trim()) throw new Error("ratio must be a non-empty string");
+    body.ratio = ratio.trim();
+  }
   const imageContent = [];
   const images = Array.isArray(req.images) ? req.images : [];
   for (const url of images) imageContent.push({ type: "image_url", image_url: { url: url } });

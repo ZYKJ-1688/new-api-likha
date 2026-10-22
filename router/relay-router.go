@@ -90,7 +90,7 @@ func SetRelayRouter(router *gin.Engine) {
 			middleware.Distribute(),
 			controller.PlaygroundVideoSubmit)
 		playgroundVideoRouter.GET("/videos/:task_id", middleware.Distribute(), controller.RelayTaskFetch)
-		playgroundVideoRouter.GET("/videos/:task_id/content", controller.VideoProxy)
+		// playgroundVideoRouter.GET("/videos/:task_id/content", controller.VideoProxy)
 	}
 	relayV1Router := router.Group("/v1")
 	relayV1Router.Use(middleware.RouteTag("relay"))
