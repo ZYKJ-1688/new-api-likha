@@ -264,24 +264,28 @@ export function parseTaskResult() {throw new Error("Immediate image must not pol
 	}
 }
 
-func TestPlaygroundImageResponseEnvelope(t *testing.T) {
+func TestPlaygroundSubmitResponseEnvelope(t *testing.T) {
 	const image = `{"created":9007199254740993,"data":[{"url":"https://example.com/image.png"}],"extra":{"retained":true}}`
+	const videoSubmit = `{"id":"task_x","task_id":"task_x","status":"queued","model":"sora-2","created_at":1763100000}`
 	tests := []struct {
-		name, body, expected string
-		status               int
-		writeString          bool
+		name, path, body, expected string
+		status                     int
+		writeString                bool
 	}{
-		{"success", image, `{"data":` + image + `,"message":"","success":true}`, 200, false},
-		{"string writer and status", image, `{"data":` + image + `,"message":"","success":true}`, 201, true},
-		{"relay error", `{"error":{"message":"upstream unavailable"}}`, `{"data":null,"message":"upstream unavailable","success":false}`, 502, false},
-		{"auth error", `{"success":false,"message":"not logged in"}`, `{"data":null,"message":"not logged in","success":false}`, 401, false},
-		{"business failure", `{"success":false,"message":"disabled"}`, `{"data":null,"message":"disabled","success":false}`, 200, false},
-		{"plain failure", `busy`, `{"data":null,"message":"busy","success":false}`, 503, true},
+		{"success", "/pg/images/generations", image, `{"data":` + image + `,"message":"","success":true}`, 200, false},
+		{"string writer and status", "/pg/images/generations", image, `{"data":` + image + `,"message":"","success":true}`, 201, true},
+		{"relay error", "/pg/images/generations", `{"error":{"message":"upstream unavailable"}}`, `{"data":null,"message":"upstream unavailable","success":false}`, 502, false},
+		{"auth error", "/pg/images/generations", `{"success":false,"message":"not logged in"}`, `{"data":null,"message":"not logged in","success":false}`, 401, false},
+		{"business failure", "/pg/images/generations", `{"success":false,"message":"disabled"}`, `{"data":null,"message":"disabled","success":false}`, 200, false},
+		{"plain failure", "/pg/images/generations", `busy`, `{"data":null,"message":"busy","success":false}`, 503, true},
+		{"video submit", "/pg/videos", videoSubmit, `{"data":` + videoSubmit + `,"message":"","success":true}`, 200, false},
+		{"video session error", "/pg/videos", `{"success":false,"message":"not logged in"}`, `{"data":null,"message":"not logged in","success":false}`, 401, false},
+		{"video task error", "/pg/videos", `{"code":"fail_to_fetch_task","message":"upstream busy","data":null}`, `{"data":null,"message":"upstream busy","success":false}`, 502, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			engine := gin.New()
-			engine.Use(middleware.PlaygroundImageResponse())
+			engine.Use(middleware.PlaygroundSubmitResponse())
 			// An abort in an earlier middleware must still get the envelope.
 			engine.Use(func(c *gin.Context) {
 				c.Header("Content-Length", fmt.Sprint(len(tt.body)))
@@ -295,14 +299,14 @@ func TestPlaygroundImageResponseEnvelope(t *testing.T) {
 				}
 				c.Abort()
 			})
-			engine.POST("/pg/images/generations", func(c *gin.Context) { t.Fatal("abort did not stop dispatch") })
+			engine.POST(tt.path, func(c *gin.Context) { t.Fatal("abort did not stop dispatch") })
 			recorder := httptest.NewRecorder()
-			engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/pg/images/generations", nil))
+			engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, tt.path, nil))
 			assert.Equal(t, tt.status, recorder.Code)
 			assert.JSONEq(t, tt.expected, recorder.Body.String())
 			assert.Contains(t, recorder.Header().Get("Content-Type"), "application/json")
 			assert.Empty(t, recorder.Header().Get("Content-Length"))
-			if tt.status < 300 && strings.Contains(tt.name, "success") {
+			if tt.status < 300 && strings.Contains(tt.body, "9007199254740993") {
 				assert.Contains(t, recorder.Body.String(), "9007199254740993")
 			}
 		})
@@ -319,12 +323,13 @@ func TestPlaygroundImageNonStreamingAndIsolation(t *testing.T) {
 		{"request replay", "POST", "/pg/images/generations", `{"model":"image","stream":false}`, false},
 		{"v1 unchanged", "POST", "/v1/images/generations", `{"stream":true}`, false},
 		{"chat unchanged", "POST", "/pg/chat/completions", `{"stream":true}`, false},
-		{"video unchanged", "POST", "/pg/videos", `{"stream":true}`, false},
+		{"video submit wrapped", "POST", "/pg/videos", `{"stream":true}`, false},
+		{"video fetch unchanged", "GET", "/pg/videos/task-1", `{"stream":true}`, false},
 		{"other method unchanged", "GET", "/pg/images/generations", `{"stream":true}`, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			engine := gin.New()
-			engine.Use(middleware.PlaygroundImageResponse(), middleware.BodyStorageCleanup(), middleware.PlaygroundImageNonStreaming())
+			engine.Use(middleware.PlaygroundSubmitResponse(), middleware.BodyStorageCleanup(), middleware.PlaygroundImageNonStreaming())
 			called := false
 			engine.Handle(tt.method, tt.path, func(c *gin.Context) {
 				called = true
@@ -343,7 +348,7 @@ func TestPlaygroundImageNonStreamingAndIsolation(t *testing.T) {
 				assert.Equal(t, false, result["success"])
 				assert.Nil(t, result["data"])
 				assert.NotEmpty(t, result["message"])
-			} else if tt.path != "/pg/images/generations" || tt.method != "POST" {
+			} else if tt.method != "POST" || (tt.path != "/pg/images/generations" && tt.path != "/pg/videos") {
 				assert.JSONEq(t, `{"created":1,"data":[]}`, recorder.Body.String())
 			} else {
 				assert.JSONEq(t, `{"data":{"created":1,"data":[]},"message":"","success":true}`, recorder.Body.String())

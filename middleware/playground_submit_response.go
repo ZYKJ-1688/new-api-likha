@@ -10,18 +10,20 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// PlaygroundImageResponse keeps the dashboard envelope local to image generation.
-// Register it before performance checks and authentication so their errors are
-// wrapped too. Other playground routes, including streaming chat, are untouched.
-func PlaygroundImageResponse() gin.HandlerFunc {
+// PlaygroundSubmitResponse keeps the dashboard envelope local to playground
+// task submission (image generation and video). Register it before
+// performance checks and authentication so their errors are wrapped too.
+// Other playground routes, including streaming chat, are untouched.
+func PlaygroundSubmitResponse() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if c.Request.Method != http.MethodPost || c.Request.URL.Path != "/pg/images/generations" {
+		if c.Request.Method != http.MethodPost ||
+			(c.Request.URL.Path != "/pg/images/generations" && c.Request.URL.Path != "/pg/videos") {
 			c.Next()
 			return
 		}
 
 		original := c.Writer
-		capture := &playgroundImageWriter{ResponseWriter: original, status: http.StatusOK, size: -1}
+		capture := &playgroundSubmitWriter{ResponseWriter: original, status: http.StatusOK, size: -1}
 		c.Writer = capture
 		defer func() { c.Writer = original }()
 
@@ -56,7 +58,7 @@ func PlaygroundImageResponse() gin.HandlerFunc {
 			if message == "" {
 				message = http.StatusText(capture.status)
 				if capture.status < 400 || message == "" {
-					message = "Invalid image generation response"
+					message = "Invalid playground response"
 				}
 			}
 		}
@@ -109,37 +111,37 @@ func PlaygroundImageNonStreaming() gin.HandlerFunc {
 
 // Unlike auditResponseWriter, this writer must withhold bytes and headers until
 // the complete JSON object is available. It is deliberately non-streaming.
-type playgroundImageWriter struct {
+type playgroundSubmitWriter struct {
 	gin.ResponseWriter
 	body   bytes.Buffer
 	status int
 	size   int
 }
 
-func (w *playgroundImageWriter) WriteHeader(status int) {
+func (w *playgroundSubmitWriter) WriteHeader(status int) {
 	if status > 0 && !w.Written() {
 		w.status = status
 	}
 }
 
-func (w *playgroundImageWriter) WriteHeaderNow() {
+func (w *playgroundSubmitWriter) WriteHeaderNow() {
 	if !w.Written() {
 		w.size = 0
 	}
 }
 
-func (w *playgroundImageWriter) Write(body []byte) (int, error) {
+func (w *playgroundSubmitWriter) Write(body []byte) (int, error) {
 	w.WriteHeaderNow()
 	n, err := w.body.Write(body)
 	w.size += n
 	return n, err
 }
 
-func (w *playgroundImageWriter) WriteString(body string) (int, error) {
+func (w *playgroundSubmitWriter) WriteString(body string) (int, error) {
 	return w.Write([]byte(body))
 }
 
-func (w *playgroundImageWriter) Status() int   { return w.status }
-func (w *playgroundImageWriter) Size() int     { return w.size }
-func (w *playgroundImageWriter) Written() bool { return w.size >= 0 }
-func (w *playgroundImageWriter) Flush()        { w.WriteHeaderNow() }
+func (w *playgroundSubmitWriter) Status() int   { return w.status }
+func (w *playgroundSubmitWriter) Size() int     { return w.size }
+func (w *playgroundSubmitWriter) Written() bool { return w.size >= 0 }
+func (w *playgroundSubmitWriter) Flush()        { w.WriteHeaderNow() }
