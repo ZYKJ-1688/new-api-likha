@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -26,6 +28,7 @@ func PlaygroundImage(c *gin.Context) {
 // submission through the task-plugin endpoint chain; the endpoint falls back
 // to RelayTask, which resolves the task platform from the channel type.
 func PlaygroundVideoSubmit(c *gin.Context) {
+	common.SetContextKey(c, constant.ContextKeyPlaygroundVideoLog, true)
 	playgroundRelay(c, func(c *gin.Context) { RelayTaskPluginEndpoint(c, RelayTask) })
 }
 
