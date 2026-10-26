@@ -35,13 +35,42 @@ export const MESSAGE_STATUS = {
 // API endpoints
 export const API_ENDPOINTS = {
   CHAT_COMPLETIONS: '/pg/chat/completions',
+  CHAT_IMAGE_GENERATIONS: '/pg/images/generations',
+  CHAT_VIDEO_GENERATIONS: '/pg/videos',
   USER_MODELS: '/api/user/models',
   USER_GROUPS: '/api/user/self/groups',
 } as const
 
+export const MODEL_LAN_TYPE = {
+  text: 0,
+  image: 1,
+  video: 2,
+}
+
+export const CREATE_MODEL_TYPE = {
+  almighty: 1,
+  headAndTail: 2,
+}
+
 // Default group — uses 'default' as the safe fallback; auto-group is
 // only selected when the backend confirms it is available for the user.
 export const DEFAULT_GROUP = 'default' as const
+
+// 图片模式默认参数，对应参数面板默认选项：1.5K + 1:1，生成 1 张
+export const DEFAULT_IMAGE_SIZE = '1536x1536'
+export const DEFAULT_IMAGE_COUNT = 1
+
+// 视频模式联调开关：接口已通，走真实 /pg/videos 请求。
+// 需要本地脱机调试时改成 true，会跳过请求直接返回 MOCK_VIDEO_URL。
+export const MOCK_VIDEO_URL =
+  'https://ark-acg-cn-beijing.tos-cn-beijing.volces.com/doubao-seedance-2-0-fast/02179264138139000000000000000000000ffffac1742e87de1c6.mp4?X-Tos-Algorithm=TOS4-HMAC-SHA256&X-Tos-Credential=AKLTYWJkZTExNjA1ZDUyNDc3YzhjNTM5OGIyNjBhNDcyOTQ%2F20261022%2Fcn-beijing%2Ftos%2Frequest&X-Tos-Date=20261022T035743Z&X-Tos-Expires=86400&X-Tos-Signature=5d0d41adee2108c70e946ec4d7a5f72c31c346dcca2089fded91d21db9e1d146&X-Tos-SignedHeaders=host'
+// 模拟接口耗时，让「loading → 出视频」的过程可见
+export const MOCK_VIDEO_LATENCY_MS = 1200
+
+// 视频模式默认参数，对应参数面板默认选项：480p + 4s + 16:9
+export const DEFAULT_VIDEO_SIZE = '480p'
+export const DEFAULT_VIDEO_DURATION = 4
+export const DEFAULT_VIDEO_RATIO = '16:9'
 
 // Default configuration
 export const DEFAULT_CONFIG: PlaygroundConfig = {
@@ -54,6 +83,13 @@ export const DEFAULT_CONFIG: PlaygroundConfig = {
   presence_penalty: 0,
   seed: null,
   stream: true,
+  type: 0,
+  size: DEFAULT_IMAGE_SIZE,
+  n: DEFAULT_IMAGE_COUNT,
+  videoSize: DEFAULT_VIDEO_SIZE,
+  videoDuration: DEFAULT_VIDEO_DURATION,
+  ratio: DEFAULT_VIDEO_RATIO,
+  createVideoMode: CREATE_MODEL_TYPE.almighty,
 }
 
 export const DEFAULT_PARAMETER_ENABLED: ParameterEnabled = {
@@ -68,8 +104,14 @@ export const DEFAULT_PARAMETER_ENABLED: ParameterEnabled = {
 // Storage keys
 export const STORAGE_KEYS = {
   CONFIG: 'playground_config',
-  MESSAGES: 'playground_messages',
   PARAMETER_ENABLED: 'playground_parameter_enabled',
+  MESSAGES: 'playground_messages', // 旧key，用于迁移
+  MESSAGES_TEXT: 'playground_messages_text',
+  MESSAGES_IMAGE: 'playground_messages_image',
+  MESSAGES_VIDEO: 'playground_messages_video',
+  // 视频是异步任务：提交成功后把 task_id 记下来，
+  // 用户离开页面（或刷新）后再回来可以接着轮询同一个任务
+  PENDING_VIDEO_TASKS: 'playground_pending_video_tasks',
 } as const
 
 // Error messages

@@ -17,50 +17,92 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useState } from 'react'
-
 import {
   appendUserMessagePair,
   applyMessageEdit,
   createRegeneratedMessages,
   removeMessageByKey,
+  resolveRegeneratePrompt,
+  MessageStateUpdater
 } from '../lib'
-import type { Message } from '../types'
+import type { Message, PlaygroundConfig } from '../types'
+import { MODEL_LAN_TYPE } from '../constants'
 
 type UsePlaygroundConversationOptions = {
   messages: Message[]
-  updateMessages: (
-    updater: Message[] | ((prev: Message[]) => Message[])
-  ) => void
-  sendChat: (messages: Message[]) => void
+  updateMessages: (updater: MessageStateUpdater) => void
+  sendChat: (msgs: Message[], prompt?: string) => void
+  config: Pick<PlaygroundConfig, 'type'>
 }
 
 export function usePlaygroundConversation({
   messages,
   updateMessages,
   sendChat,
+  config,
 }: UsePlaygroundConversationOptions) {
   const [editingMessageKey, setEditingMessageKey] = useState<string | null>(
     null
   )
 
-  const handleSendMessage = useCallback(
-    (text: string) => {
-      const nextMessages = appendUserMessagePair(messages, text)
+  // 图片 / 视频模式需要把原始提示词单独带进请求（并记在 version 上），
+  // 文字模式走 messages 数组即可
+  const needsPrompt = config.type === MODEL_LAN_TYPE.image || config.type === MODEL_LAN_TYPE.video
+
+  // 统一的「先落消息、再发请求」，发送 / 重新生成 / 编辑提交共用
+  const commitAndSend = useCallback(
+    (nextMessages: Message[], prompt?: string) => {
       updateMessages(nextMessages)
+
+      if (prompt) {
+        sendChat(nextMessages, prompt)
+        return
+      }
+
       sendChat(nextMessages)
     },
-    [messages, updateMessages, sendChat]
+    [updateMessages, sendChat]
   )
 
-  const handleRegenerateMessage = useCallback(
-    (message: Message) => {
-      const nextMessages = createRegeneratedMessages(messages, message.key)
+  // 点击发送
+  const handleSendMessage = useCallback(
+    (text: string) => {
+      if (!text.trim()) return
+
+      // 图片 / 视频模式：把本次 prompt 直接写进新建的 user / assistant 两个 version，
+      // 而不是去回填历史消息（回填会把旧轮次的 prompt 覆盖成本次 text）。
+      const prompt = needsPrompt ? text : undefined
+      const nextMessages = appendUserMessagePair(messages, text, prompt)
       if (!nextMessages) return
 
-      updateMessages(nextMessages)
-      sendChat(nextMessages)
+      commitAndSend(nextMessages, prompt)
     },
-    [messages, updateMessages, sendChat]
+    [messages, commitAndSend, needsPrompt]
+  )
+
+  // 重新生成
+  const handleRegenerateMessage = useCallback(
+    (message: Message) => {
+      // 先解析 prompt，再拿它去创建 assistant 占位消息，
+      // 否则新生成的 assistant version 天生就没有 prompt。
+      const prompt = needsPrompt
+        ? resolveRegeneratePrompt(messages, message.key)
+        : undefined
+
+      // 图片 / 视频模式下拿不到 prompt 就不发：
+      // 请求体里会只剩 model / group，后端必然报错，界面还会卡在 loading
+      if (needsPrompt && !prompt) return
+
+      const nextMessages = createRegeneratedMessages(
+        messages,
+        message.key,
+        prompt
+      )
+      if (!nextMessages) return
+
+      commitAndSend(nextMessages, prompt)
+    },
+    [messages, commitAndSend, needsPrompt]
   )
 
   const handleEditMessage = useCallback((message: Message) => {
@@ -81,18 +123,22 @@ export function usePlaygroundConversation({
         messages,
         editingMessageKey,
         newContent,
-        shouldSubmit
+        shouldSubmit,
+        needsPrompt ? newContent : undefined
       )
       if (!editResult) return
 
       setEditingMessageKey(null)
-      updateMessages(editResult.messages)
 
       if (editResult.shouldSend) {
-        sendChat(editResult.messages)
+        // commitAndSend 内部会落一次消息，这里不要再 updateMessages 一遍
+        commitAndSend(editResult.messages, needsPrompt ? newContent : undefined)
+        return
       }
+
+      updateMessages(editResult.messages)
     },
-    [editingMessageKey, messages, updateMessages, sendChat]
+    [editingMessageKey, messages, updateMessages, commitAndSend, needsPrompt]
   )
 
   const handleDeleteMessage = useCallback(

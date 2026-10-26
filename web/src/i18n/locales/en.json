@@ -2619,6 +2619,7 @@
     "Finished requests": "Finished requests",
     "First API request": "First API request",
     "First token": "First token",
+    "First/Last Frame": "First/Last Frame",
     "First/Last Frame to Video": "First/Last Frame to Video",
     "Fix Abilities": "Repair Channel Consistency",
     "Fix order": "Fix order",
@@ -2956,6 +2957,7 @@
     "Image Out": "Image Out",
     "Image output price": "Image output price",
     "Image Preview": "Image Preview",
+    "Image mode": "Image mode",
     "Image prices with count, size or quality adjustments must be converted manually.": "Image prices with count, size or quality adjustments must be converted manually.",
     "Image ratio": "Image ratio",
     "Image to Video": "Image to Video",
@@ -3993,6 +3995,7 @@
     "Old format: Direct override. New format: Supports conditional judgment and custom JSON operations.": "Old format: Direct override. New format: Supports conditional judgment and custom JSON operations.",
     "Ollama": "Ollama",
     "Ollama Models": "Ollama Models",
+    "Omni reference": "Omni reference",
     "One API": "One API",
     "One domain per line": "One domain per line",
     "One domain per line (only used when domain restriction is enabled)": "One domain per line (only used when domain restriction is enabled)",
@@ -5834,6 +5837,7 @@
     "Text Input": "Text Input",
     "Text or array of texts to embed": "Text or array of texts to embed",
     "Text Output": "Text Output",
+    "Text mode": "Text mode",
     "Text to Video": "Text to Video",
     "Text-only requests": "Text-only requests",
     "The access token lacks the required permission": "The access token lacks the required permission",
@@ -6909,6 +6913,14 @@
     "Manage API Keys": "Manage API Keys",
     "Check Usage Logs": "Check Usage Logs",
     "View Quota and History": "View Quota and History",
-    "When troubleshooting, retain the request time and request ID shown in API or usage logs.": "When troubleshooting, retain the request time and request ID shown in API or usage logs."
+    "When troubleshooting, retain the request time and request ID shown in API or usage logs.": "When troubleshooting, retain the request time and request ID shown in API or usage logs.",
+    "Model Type": "Model Type",
+    "Text Model": "Text Model",
+    "Image Model": "Image Model",
+    "Video Model": "Video Model",
+    "GenerateIng": "GenerateIng...",
+    "Mode Type": "Mode Type",
+    "First Frame": "First Frame",
+    "Last Frame": "Last Frame"
   }
 }

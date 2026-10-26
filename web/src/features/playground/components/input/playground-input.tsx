@@ -23,7 +23,6 @@ import {
   PromptInput,
   PromptInputFooter,
   PromptInputTextarea,
-  type PromptInputMessage,
 } from '@/components/ai-elements/prompt-input'
 
 import { getSubmittableInputText } from '../../lib'
@@ -33,11 +32,15 @@ import type {
   ParameterEnabled,
   PlaygroundConfig,
 } from '../../types'
+import { MODEL_LAN_TYPE, CREATE_MODEL_TYPE } from '../../constants'
 import { PlaygroundInputControls } from './playground-input-controls'
 import { PlaygroundInputTools } from './playground-input-tools'
+import { PlaygroundInputImages } from './playground-input-images'
+
 
 interface PlaygroundInputProps {
   config: PlaygroundConfig
+  setConfig: (value: any) => void
   onSubmit: (text: string) => void
   onStop?: () => void
   disabled?: boolean
@@ -64,6 +67,7 @@ interface PlaygroundInputProps {
 
 export function PlaygroundInput({
   config,
+  setConfig,
   onSubmit,
   onStop,
   disabled,
@@ -84,9 +88,40 @@ export function PlaygroundInput({
   const { t } = useTranslation()
   const [text, setText] = useState('')
 
-  const handleSubmit = (message: PromptInputMessage) => {
-    const submittableText = getSubmittableInputText(message, disabled)
+  // 图片模式，视频模式图片上传逻辑处理
+  const handleImagesChange = (list: any[]) => {
+    // image 只在图片 / 视频模式下作为入参，文字模式不写入 config
+    if (list.length === 0) {
+      onConfigChange('image', undefined)
+      onConfigChange('metadata', undefined)
+      return
+    }
+    if (config.type === MODEL_LAN_TYPE.image) {
+      const srcs = list.map(x => x?.src || '')
+      const data: string | string[] | undefined = srcs.length === 0 ? undefined : srcs.length === 1 ? srcs[0] : srcs
+      onConfigChange('image', data)
+    }
+    if (config.type === MODEL_LAN_TYPE.video) {
+      if (config.createVideoMode === CREATE_MODEL_TYPE.almighty) {
+        const metadata:any = {}
+        metadata.content = list.map(item => {
+          return { type: "image_url", image_url: { url: item?.src || '' }, role: "reference_image" }
+        })
+        onConfigChange('metadata', metadata)
+      } else if (config.createVideoMode === CREATE_MODEL_TYPE.headAndTail) {
+        const first = list.find(item => item.isFirstIem)?.src
+        const last = list.find(item => item.isSeconfIem)?.src
+        const content: Array<{ type: string; image_url: { url: string }; role: string }> = []
+        if (first) content.push({ type: 'image_url', image_url: { url: first }, role: 'first_frame' })
+        if (last) content.push({ type: 'image_url', image_url: { url: last }, role: 'last_frame' })
+        onConfigChange('metadata', content.length > 0 ? { content } : undefined)
+      }
+    }
+  }
 
+  const handleSubmit = (message: any) => {
+    // 内容提交
+    const submittableText = getSubmittableInputText(message, disabled)
     if (!submittableText) return
     onSubmit(submittableText)
     setText('')
@@ -96,22 +131,30 @@ export function PlaygroundInput({
     <div className='grid shrink-0 gap-4 px-1 md:pb-4'>
       <PromptInput
         className='relative'
-        groupClassName='bg-background/95 dark:bg-background/80 border-border/70 shadow-[0_18px_60px_-32px_rgba(0,0,0,0.65)] ring-1 ring-foreground/5 rounded-xl overflow-hidden transition-all duration-200 focus-within:border-primary/45 focus-within:ring-primary/15 focus-within:shadow-[0_22px_70px_-34px_rgba(0,0,0,0.75)]'
+        groupClassName='bg-background/95 dark:bg-background/80 border-border/70 shadow-[0_18px_60px_-32px_rgba(0,0,0,0.65)] ring-1 ring-foreground/5 rounded-xl overflow-hidden transition-all duration-200 focus-within:border-primary/45 focus-within:ring-primary/15 focus-within:shadow-[0_22px_70px_-34px_rgba(0,0,0,0.75)] !opacity-100'
         onSubmit={handleSubmit}
       >
-        <PromptInputTextarea
-          autoComplete='off'
-          autoCorrect='off'
-          autoCapitalize='off'
-          spellCheck={false}
-          className='min-h-20 px-5 pt-4 pb-3 leading-7 md:min-h-24 md:text-base'
-          disabled={disabled}
-          onChange={(event) => setText(event.target.value)}
-          placeholder={t('Ask anything')}
-          value={text}
-        />
+        <div className='w-full flex flex-row'>
+          <PlaygroundInputImages 
+            config={config}
+            setConfig={setConfig}
+            activeTab={config.type}
+            onImagesChange={handleImagesChange}
+          />
+          <PromptInputTextarea
+            autoComplete='off'
+            autoCorrect='off'
+            autoCapitalize='off'
+            spellCheck={false}
+            className='min-h-20 px-5 pt-4 pb-3 leading-7 md:min-h-24 md:text-base'
+            disabled={disabled}
+            onChange={(event) => setText(event.target.value)}
+            placeholder={t('Ask anything')}
+            value={text}
+          />
+        </div>
 
-        <PromptInputFooter className='border-border/60 bg-muted/20 dark:bg-muted/10 border-t px-3 py-2.5 backdrop-blur'>
+        <PromptInputFooter className='border-border/60 bg-muted/20 dark:bg-muted/10 border-t px-3 py-2.5 backdrop-blur rounded-br-[20rem] rounded-bl-[20rem]'>
           <PlaygroundInputControls
             disabled={disabled}
             groups={groups}
@@ -127,6 +170,7 @@ export function PlaygroundInput({
             tools={
               <PlaygroundInputTools
                 config={config}
+                setConfig={setConfig}
                 disabled={disabled}
                 hasMessages={hasMessages}
                 onConfigChange={onConfigChange}

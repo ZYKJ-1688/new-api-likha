@@ -28,11 +28,13 @@ import {
 export function Playground() {
   const {
     config,
+    setConfig,
     parameterEnabled,
     messages,
     isLoadingMessages,
     models,
     groups,
+    videoMessages,
     updateMessages,
     setModels,
     setGroups,
@@ -44,7 +46,10 @@ export function Playground() {
   const { sendChat, stopGeneration, isGenerating } = useChatHandler({
     config,
     parameterEnabled,
-    onMessageUpdate: updateMessages,
+    // tab 透传：视频结果要写回视频会话，用户在轮询期间切了 tab 也不串台
+    onMessageUpdate: (updater, tab) => updateMessages(updater, tab),
+    // 视频tab的消息，用来判断有没有「还没出结果」的助手消息可以承接续轮询结果
+    videoMessages,
   })
 
   const {
@@ -59,6 +64,7 @@ export function Playground() {
     messages,
     updateMessages,
     sendChat,
+    config,
   })
 
   const handleClearMessages = () => {
@@ -69,6 +75,7 @@ export function Playground() {
   const { isLoadingModels } = usePlaygroundOptions({
     currentGroup: config.group,
     currentModel: config.model,
+    currentType: config.type,
     setGroups,
     setModels,
     updateConfig,
@@ -76,9 +83,10 @@ export function Playground() {
 
   return (
     <div className='relative flex size-full min-h-0 flex-col overflow-hidden'>
-      {/* Full-width scroll container: scrolling works even over side whitespace */}
+
       <div className='flex min-h-0 flex-1 flex-col overflow-hidden'>
         <PlaygroundChat
+          config={config}
           messages={messages}
           isLoadingMessages={isLoadingMessages}
           onRegenerateMessage={handleRegenerateMessage}
@@ -93,10 +101,10 @@ export function Playground() {
         />
       </div>
 
-      {/* Input area: center content and constrain to the same container width */}
       <div className='mx-auto w-full max-w-4xl'>
         <PlaygroundInput
           config={config}
+          setConfig={setConfig}
           disabled={isGenerating}
           groups={groups}
           groupValue={config.group}

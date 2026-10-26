@@ -34,6 +34,20 @@ export const playgroundConfigSchema = z.object({
   presence_penalty: z.number().optional(),
   seed: z.number().nullable().optional(),
   stream: z.boolean().optional(),
+  size: z.string().optional(),
+  n: z.number().optional(),
+  // 视频模式参数与图片模式分开存，否则 zod 会在 saveConfig 时剥掉
+  videoSize: z.string().optional(),
+  videoDuration: z.number().optional(),
+  ratio: z.string().optional(),
+  image: z.union([z.string(), z.array(z.string())]).optional(),
+  metadata: z.object({
+    content: z.array(z.object({
+      type: z.string(),
+      image_url: z.object({ url: z.string() }),
+      role: z.string(),
+    })),
+  }).optional(),
 })
 
 export const parameterEnabledSchema = z.object({
@@ -56,6 +70,9 @@ const messageStatusSchema = z.enum([
 const messageVersionSchema = z.object({
   id: z.string(),
   content: z.string(),
+  // 图片/视频模式下会把原始 prompt 存进每个 version，
+  // 缺失该字段会导致 zod 在 parse 时把 prompt 剥掉（zod 默认丢弃未知 key）
+  prompt: z.string().optional(),
 })
 
 const sourceSchema = z.object({
@@ -69,6 +86,13 @@ const reasoningSchema = z.object({
   startedAt: z.number().optional(),
   completedAt: z.number().optional(),
   durationMs: z.number().optional(),
+})
+
+// 生成类结果（图片 / 视频）的播放信息。
+// media.file 是运行时的 File 对象，无法序列化，这里只落 url。
+const mediaSchema = z.object({
+  type: z.enum(['image', 'video']),
+  url: z.string().optional(),
 })
 
 const messageSchema = z.object({
@@ -86,6 +110,7 @@ const messageSchema = z.object({
   isContentComplete: z.boolean().optional(),
   status: messageStatusSchema.optional(),
   errorCode: z.string().nullable().optional(),
+  media: mediaSchema.optional(),
 })
 
 export const messagesSchema = z.array(messageSchema)
