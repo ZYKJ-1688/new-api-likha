@@ -4168,6 +4168,12 @@
     "Parameter settings": "Parameter settings",
     "parameter.": "parameter.",
     "Parameters": "Parameters",
+    "Select Ratio": "Select Aspect Ratio",
+    "Select Resolution": "Select Resolution",
+    "Select Video Duration": "Select Video Duration",
+    "Standard 1K": "Standard 1K",
+    "High 1.5K": "High Definition 1.5K",
+    "Ultra 2K": "Ultra HD 2K",
     "Parsed {{count}} service account file(s)": "Parsed {{count}} service account file(s)",
     "Parsed plugin metadata": "Parsed plugin metadata",
     "Partial Submission": "Partial Submission",
@@ -6921,6 +6927,7 @@
     "GenerateIng": "GenerateIng...",
     "Mode Type": "Mode Type",
     "First Frame": "First Frame",
-    "Last Frame": "Last Frame"
+    "Last Frame": "Last Frame",
+    "Size": "Size"
   }
 }

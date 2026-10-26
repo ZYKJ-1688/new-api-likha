@@ -65,14 +65,15 @@ export function usePlaygroundConversation({
   )
 
   // 点击发送
+  // images：文字模式下用户随输入框上传的图片（OSS 地址），挂到 user 消息 version 上
   const handleSendMessage = useCallback(
-    (text: string) => {
-      if (!text.trim()) return
+    (text: string, images?: string[]) => {
+      if (!text.trim() && !(images && images.length > 0)) return
 
       // 图片 / 视频模式：把本次 prompt 直接写进新建的 user / assistant 两个 version，
       // 而不是去回填历史消息（回填会把旧轮次的 prompt 覆盖成本次 text）。
       const prompt = needsPrompt ? text : undefined
-      const nextMessages = appendUserMessagePair(messages, text, prompt)
+      const nextMessages = appendUserMessagePair(messages, text, prompt, images)
       if (!nextMessages) return
 
       commitAndSend(nextMessages, prompt)

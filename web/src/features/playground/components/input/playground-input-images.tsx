@@ -4,6 +4,7 @@ import { PreviewCard } from '@base-ui/react/preview-card'
 import { LoadingState } from '@/components/loading-state'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { MODEL_LAN_TYPE, CREATE_MODEL_TYPE } from '../../constants'
 import { ossUploadImage } from '../../api'
 
 type ImageItem = {
@@ -18,10 +19,12 @@ type ImageItem = {
 }
 
 interface PlaygroundImagesProps {
-  config: any 
+  config: any
   setConfig: (value: any) => void
   activeTab: number
   onImagesChange: (list: any[]) => void
+  /** 文字模式提交成功后自增的信号：消息已带上图片，上传区清空列表 */
+  resetSignal?: number
 }
 
 const CARD_W = 64
@@ -210,7 +213,7 @@ function ImageCard({ img, index, total, expanded, hoveredIndex, onRemove, plain 
   )
 }
 
-export function PlaygroundInputImages({ config, setConfig, activeTab, onImagesChange }: PlaygroundImagesProps) {
+export function PlaygroundInputImages({ config, setConfig, activeTab, onImagesChange, resetSignal = 0 }: PlaygroundImagesProps) {
   const { t } = useTranslation()
   const [imageList, setImageList] = useState<ImageItem[]>([])
   const [expanded, setExpanded] = useState(false)
@@ -430,6 +433,20 @@ export function PlaygroundInputImages({ config, setConfig, activeTab, onImagesCh
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, config.createVideoMode])
 
+  // 文字模式提交成功后清空列表：图片已经挂到刚发出的 user 消息上，
+  // 输入区不保留，避免下一条消息把旧图再带一遍
+  useEffect(() => {
+    if (!resetSignal) return
+    listRef.current.forEach((item) => {
+      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl)
+    })
+    commitList(() => [])
+    onImagesChange([])
+    setHovered(null)
+    setExpanded(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetSignal])
+
   /**
    * 指针状态机：不再依赖任何元素的 mouseenter / mouseleave。
    * pointermove 只记录坐标，真正的判定在 rAF 里做几何校验 —— 哪怕中间漏掉几帧，
@@ -628,7 +645,7 @@ export function PlaygroundInputImages({ config, setConfig, activeTab, onImagesCh
     (expanded ? ROT_PIVOT * Math.sin((addDeg * Math.PI) / 180) : 0)
 
   // 首尾帧模式：两张倾斜卡，中间以互换图标连接；点击占位卡上传，点击图标互换
-  if (config?.createVideoMode === 2) {
+  if (config?.createVideoMode === CREATE_MODEL_TYPE.headAndTail && config?.type === MODEL_LAN_TYPE.video) {
     const firstFrame = imageList.find(item => item.isFirstIem)
     const secondFrame = imageList.find(item => item.isSeconfIem)
 
@@ -649,7 +666,7 @@ export function PlaygroundInputImages({ config, setConfig, activeTab, onImagesCh
         ) : (
           <div
             onClick={() => (isFirst ? firstInputRef : secondInputRef).current?.click()}
-            className="flex h-[5.2rem] w-16 cursor-pointer flex-col items-center justify-center gap-1 rounded-sm border border-dashed border-border/70 bg-white shadow-sm transition-colors hover:bg-neutral-50"
+            className="flex h-[5.2rem] w-16 cursor-pointer flex-col items-center justify-center gap-1 rounded-xs border border-dashed border-border/70 bg-white shadow-sm transition-colors hover:bg-neutral-50"
           >
             <span className="text-3xl font-light text-[#999]">+</span>
             <span className="text-xs text-center text-[#999]">{isFirst ? t('First Frame') : t('Last Frame')}</span>
@@ -699,7 +716,7 @@ export function PlaygroundInputImages({ config, setConfig, activeTab, onImagesCh
         {imageList.length === 0 ? (
           <div
             onClick={handleOpenFile}
-            className="flex h-[6.25rem] w-20 rotate-[-6deg] cursor-pointer items-center justify-center rounded-sm border border-dashed border-border/70 bg-gray-50 transition-colors hover:bg-neutral-100"
+            className="flex h-[6.25rem] w-20 rotate-[-6deg] cursor-pointer items-center justify-center rounded-xs border border-dashed border-border/70 shadow-sm bg-gray-50 transition-colors hover:bg-neutral-100"
           >
             <span className="text-4xl font-light text-[#999]">+</span>
           </div>

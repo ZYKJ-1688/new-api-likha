@@ -58,17 +58,20 @@ type ChatMessageRenderState = {
  * 追加一条 user 消息 + 一条待生成的 assistant 占位消息。
  * `prompt` 用于图片/视频模式：这两条消息的 version 都要记住本次的原始提示词，
  * 否则 assistant 的 content 被替换成图片 markdown 后，重新生成时取不到 prompt。
+ * `images` 用于文字模式：用户随这条消息上传的图片（OSS 地址），挂在 user version 上，
+ * 后续请求（含多轮历史 / 重新生成）都会带上。
  */
 export function appendUserMessagePair(
   messages: Message[],
   content: string,
-  prompt?: string
+  prompt?: string,
+  images?: string[]
 ): Message[] {
   const submittedAt = Date.now()
 
   return [
     ...messages,
-    createUserMessage(content, submittedAt, prompt),
+    createUserMessage(content, submittedAt, prompt, images),
     createLoadingAssistantMessage(submittedAt, prompt),
   ]
 }

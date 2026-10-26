@@ -27,6 +27,7 @@ export interface MessageVersion {
   id: string
   content: string
   prompt?: string
+  images?: string[]
 }
 
 export interface Message {

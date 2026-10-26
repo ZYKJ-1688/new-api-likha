@@ -230,9 +230,9 @@ function PlaygroundParameterContent({
   
   // 分辨率
   const resolutionOptions = [
-    { label: '标清 1K', value: '1k' },
-    { label: '高清 1.5K', value: '1.5k', plus: true },
-    { label: '超清 2K', value: '2k', plus: true },
+    { label: t('Standard 1K'), value: '1k' },
+    { label: t('High 1.5K'), value: '1.5k', plus: true },
+    { label: t('Ultra 2K'), value: '2k', plus: true },
   ]
 
   // 视频分辨率
@@ -349,7 +349,7 @@ function PlaygroundParameterContent({
         activeTab === MODEL_LAN_TYPE.image && <div className="w-full p-0 space-y-6 text-slate-800 dark:text-slate-100">
           {/* 选择比例 */}
           <div>
-            <p className="text-sm font-medium mb-3 text-slate-600 dark:text-slate-300">选择比例</p>
+            <p className="text-sm font-medium mb-3 text-slate-600 dark:text-slate-300">{t('Select Ratio')}</p>
             <RadioGroup
               value={selectedRatio}
               onValueChange={handleImageRatioChange}
@@ -373,7 +373,7 @@ function PlaygroundParameterContent({
           </div>
     
           <div>
-            <p className="text-sm font-medium mb-3 text-slate-600 dark:text-slate-300">选择分辨率</p>
+            <p className="text-sm font-medium mb-3 text-slate-600 dark:text-slate-300">{t('Select Resolution')}</p>
             <RadioGroup
               value={selectedRes}
               onValueChange={handleImageResolutionChange}
@@ -423,7 +423,7 @@ function PlaygroundParameterContent({
           </div> */}
     
           <div>
-            <p className="text-sm font-medium mb-3 text-slate-600 dark:text-slate-300">尺寸</p>
+            <p className="text-sm font-medium mb-3 text-slate-600 dark:text-slate-300">{t('Size')}</p>
             <div className="flex items-center gap-2">
               <div className="flex items-center flex-1">
                 <span className="w-8 text-slate-500">W</span>
@@ -446,7 +446,7 @@ function PlaygroundParameterContent({
         activeTab === MODEL_LAN_TYPE.video && <div className="w-full p-0 space-y-6 text-slate-800 dark:text-slate-100">
           {/* 选择比例 */}
           <div>
-            <p className="text-sm font-medium mb-3 text-slate-600 dark:text-slate-300">选择比例</p>
+            <p className="text-sm font-medium mb-3 text-slate-600 dark:text-slate-300">{t('Select Ratio')}</p>
             <RadioGroup
               value={videoRatio}
               onValueChange={handleVideoRatioChange}
@@ -475,7 +475,7 @@ function PlaygroundParameterContent({
           </div>
     
           <div>
-            <p className="text-sm font-medium mb-3 text-slate-600 dark:text-slate-300">选择分辨率</p>
+            <p className="text-sm font-medium mb-3 text-slate-600 dark:text-slate-300">{t('Select Resolution')}</p>
             <RadioGroup
               value={videoSize}
               onValueChange={handleVideoSizeChange}
@@ -525,7 +525,7 @@ function PlaygroundParameterContent({
     
           <div>
             <div className="flex items-center gap-2 mb-3">
-              <p className="text-sm font-medium text-slate-600 dark:text-slate-300">选择视频生成时长</p>
+              <p className="text-sm font-medium text-slate-600 dark:text-slate-300">{t('Select Video Duration')}</p>
             </div>
             <div className='flex flex-row gap-5'>
               <div className='flex-1'>

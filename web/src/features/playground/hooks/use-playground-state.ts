@@ -124,22 +124,15 @@ export function usePlaygroundState() {
   // 加载所有tab消息
   useEffect(() => {
     let cancelled = false
-    setConfig((prev) => {
-      const obj = {
-        ...prev,
-        stream: config.type === MODEL_LAN_TYPE.text,
-      }
-      return obj
-    })
     window.setTimeout(() => {
       const loadedText = loadMessages(0) ?? []
       const loadedImage = loadMessages(1) ?? []
       const loadedVideo = loadMessages(2) ?? []
       if (cancelled) return
 
-      latestMessagesRef.current.text = loadedText
-      latestMessagesRef.current.image = loadedImage
-      latestMessagesRef.current.video = loadedVideo
+      latestMessagesRef.current[0] = loadedText
+      latestMessagesRef.current[1] = loadedImage
+      latestMessagesRef.current[2] = loadedVideo
       hasLoadedMessagesRef.current = true
 
       setTextMessages(loadedText)
@@ -148,6 +141,17 @@ export function usePlaygroundState() {
       setIsLoadingMessages(false)
     }, 0)
     return () => { cancelled = true }
+  }, [])
+
+  // stream 配置
+  useEffect(() => {
+    setConfig((prev) => {
+      const obj = {
+        ...prev,
+        stream: config.type === MODEL_LAN_TYPE.text,
+      }
+      return obj
+    })
   }, [config.type])
 
   // 页面卸载，保存全部tab待持久化消息
