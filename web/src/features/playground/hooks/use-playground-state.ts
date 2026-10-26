@@ -143,6 +143,17 @@ export function usePlaygroundState() {
     return () => { cancelled = true }
   }, [])
 
+  // stream 配置
+  useEffect(() => {
+    setConfig((prev) => {
+      const obj = {
+        ...prev,
+        stream: config.type === MODEL_LAN_TYPE.text,
+      }
+      return obj
+    })
+  }, [config.type])
+
   // 页面卸载，保存全部tab待持久化消息
   useEffect(() => () => {
     if (messagesSaveTimerRef.current !== null) {
@@ -156,12 +167,8 @@ export function usePlaygroundState() {
   const updateConfig = useCallback(
     <K extends keyof PlaygroundConfig>(key: K, value: PlaygroundConfig[K]) => {
       setConfig((prev) => {
-        const merged = { ...prev, [key]: value }
-        // 只有文字模式支持流式
-        if (key === 'type') {
-          merged.stream = value === MODEL_LAN_TYPE.text
-        }
-        const updated = normalizePlaygroundConfig(merged)
+        // 归一化后 image 的空值会被剔除，文字模式下不会出现该字段
+        const updated = normalizePlaygroundConfig({ ...prev, [key]: value })
         saveConfig(updated)
         return updated
       })
