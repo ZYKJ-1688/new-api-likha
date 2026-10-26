@@ -73,6 +73,8 @@ const messageVersionSchema = z.object({
   // 图片/视频模式下会把原始 prompt 存进每个 version，
   // 缺失该字段会导致 zod 在 parse 时把 prompt 剥掉（zod 默认丢弃未知 key）
   prompt: z.string().optional(),
+  // 文字模式：用户随消息上传的图片（OSS 地址），刷新后历史消息仍能带图重发
+  images: z.array(z.string()).optional(),
 })
 
 const sourceSchema = z.object({

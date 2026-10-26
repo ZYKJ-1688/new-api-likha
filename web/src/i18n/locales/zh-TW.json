@@ -4166,6 +4166,12 @@
     "Parameter settings": "參數設定",
     "parameter.": "參數。",
     "Parameters": "參數",
+    "Select Ratio": "選擇比例",
+    "Select Resolution": "選擇解析度",
+    "Select Video Duration": "選擇影片生成時長",
+    "Standard 1K": "標清 1K",
+    "High 1.5K": "高清 1.5K",
+    "Ultra 2K": "超清 2K",
     "Parsed {{count}} service account file(s)": "已解析 {{count}} 個服務賬號檔案",
     "Parsed plugin metadata": "解析出的外掛元数据",
     "Partial Submission": "部分提交確認",
@@ -6916,6 +6922,7 @@
     "GenerateIng": "正在生成中...",
     "Mode Type": "模式類型",
     "First Frame": "首帧",
-    "Last Frame": "尾帧"
+    "Last Frame": "尾帧",
+    "Size": "尺寸"
   }
 }

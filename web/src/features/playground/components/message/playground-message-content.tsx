@@ -40,7 +40,7 @@ import {
 } from '@/components/ai-elements/sources'
 import { cn } from '@/lib/utils'
 
-import { MESSAGE_STATUS } from '../../constants'
+import { MESSAGE_ROLES, MESSAGE_STATUS } from '../../constants'
 import {
   getMessageAlignmentClass,
   getMessageContentState,
@@ -93,6 +93,12 @@ export function PlaygroundMessageContent({
   const mediaVideoUrl =
     message.media?.type === 'video' ? message.media.url : undefined
   const showVideoPlayer = Boolean(mediaVideoUrl) && !isSourceVisible
+
+  // 文字模式用户消息附带的图片（vision 格式），在正文上方平铺缩略图
+  const versionImages =
+    message.from === MESSAGE_ROLES.USER
+      ? message.versions[0]?.images ?? []
+      : []
 
   const [preview, setPreview] = useState<{ alt: string; src: string } | null>(
     null
@@ -160,8 +166,22 @@ export function PlaygroundMessageContent({
         </>
       )}
 
-      {!isError && (showMessageContent || showVideoPlayer) && (
+      {!isError && (showMessageContent || showVideoPlayer || versionImages.length > 0) && (
         <>
+          {versionImages.length > 0 && (
+            <div className='mb-2 flex flex-wrap gap-2'>
+              {versionImages.map((url) => (
+                <img
+                  key={url}
+                  src={url}
+                  alt=''
+                  draggable={false}
+                  onClick={() => setPreview({ src: url, alt: '' })}
+                  className='max-h-40 w-auto max-w-[16rem] cursor-zoom-in rounded-md border border-black/5 object-cover transition-opacity hover:opacity-90'
+                />
+              ))}
+            </div>
+          )}
           {mediaVideoUrl && showVideoPlayer ? (
             <VideoPlayer className='mb-2' src={mediaVideoUrl} />
           ) : (

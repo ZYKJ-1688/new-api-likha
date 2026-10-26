@@ -41,7 +41,7 @@ import { PlaygroundInputImages } from './playground-input-images'
 interface PlaygroundInputProps {
   config: PlaygroundConfig
   setConfig: (value: any) => void
-  onSubmit: (text: string) => void
+  onSubmit: (text: string, images?: string[]) => void
   onStop?: () => void
   disabled?: boolean
   isGenerating?: boolean
@@ -87,13 +87,25 @@ export function PlaygroundInput({
 }: PlaygroundInputProps) {
   const { t } = useTranslation()
   const [text, setText] = useState('')
+  // 文字模式：随输入框暂存的待发送图片（OSS 地址）。
+  // 不走 config.image —— 文字模式配置归一化时会剔除该字段，且不必持久化到 localStorage
+  const [inputImages, setInputImages] = useState<string[]>([])
+  // 提交后自增，通知图片上传区清空缩略图列表
+  const [imagesResetSignal, setImagesResetSignal] = useState(0)
 
   // 图片模式，视频模式图片上传逻辑处理
   const handleImagesChange = (list: any[]) => {
-    // image 只在图片 / 视频模式下作为入参，文字模式不写入 config
     if (list.length === 0) {
+      setInputImages([])
       onConfigChange('image', undefined)
       onConfigChange('metadata', undefined)
+      return
+    }
+    if (config.type === MODEL_LAN_TYPE.text) {
+      // 文字模式：图片暂存在输入区本地状态，提交时随这条消息一起发出去
+      setInputImages(
+        list.map(x => x?.src || '').filter(src => src.trim() !== '')
+      )
       return
     }
     if (config.type === MODEL_LAN_TYPE.image) {
@@ -123,8 +135,15 @@ export function PlaygroundInput({
     // 内容提交
     const submittableText = getSubmittableInputText(message, disabled)
     if (!submittableText) return
-    onSubmit(submittableText)
+    // 文字模式：把暂存图片随这条消息一起提交（图片/视频模式仍走 prompt + config）
+    const images = config.type === MODEL_LAN_TYPE.text && inputImages.length > 0 ? inputImages : undefined
+    onSubmit(submittableText, images)
     setText('')
+    // 消息已带上图片，输入区不再保留：清空暂存并让上传区收起缩略图
+    if (images) {
+      setInputImages([])
+      setImagesResetSignal((prev) => prev + 1)
+    }
   }
 
   return (
@@ -135,11 +154,12 @@ export function PlaygroundInput({
         onSubmit={handleSubmit}
       >
         <div className='w-full flex flex-row'>
-          <PlaygroundInputImages 
+          <PlaygroundInputImages
             config={config}
             setConfig={setConfig}
             activeTab={config.type}
             onImagesChange={handleImagesChange}
+            resetSignal={imagesResetSignal}
           />
           <PromptInputTextarea
             autoComplete='off'

@@ -34,19 +34,18 @@ import type {
  */
 export function createMessageVersion(
   content: string,
-  prompt?: string
+  prompt?: string,
+  images?: string[]
 ): MessageVersion {
-  if (prompt === undefined) {
-    return {
-      id: nanoid(),
-      content,
-    }
+  const version: MessageVersion = { id: nanoid(), content }
+  if (prompt !== undefined) {
+    version.prompt = prompt
   }
-  return {
-    id: nanoid(),
-    content,
-    prompt,
+  // 图片地址挂在 version 上：历史消息 / 重新生成时都能带着图片重发
+  if (images && images.length > 0) {
+    version.images = images
   }
+  return version
 }
 
 /**
@@ -90,12 +89,13 @@ export function updateCurrentVersionContent(
 export function createUserMessage(
   content: string,
   createdAt: number = Date.now(),
-  prompt?: string
+  prompt?: string,
+  images?: string[]
 ): Message {
   return {
     key: nanoid(),
     from: MESSAGE_ROLES.USER,
-    versions: [createMessageVersion(content, prompt)],
+    versions: [createMessageVersion(content, prompt, images)],
     createdAt,
   }
 }
@@ -165,10 +165,30 @@ export function getTextContent(content: string | ContentPart[]): string {
 }
 
 /**
+ * Get image urls attached to the current message version (text mode vision messages)
+ */
+export function getMessageImages(message: Message): string[] {
+  return getCurrentVersion(message).images ?? []
+}
+
+/**
  * Format message for API request
+ *
+ * 文字模式带图消息会组装成 OpenAI vision 的 content 数组：
+ * [{ type: 'text', text }, { type: 'image_url', image_url: { url } }, ...]
+ * 纯文本消息保持 content 为字符串，不带多余结构。
  */
 export function formatMessageForAPI(message: Message): ChatCompletionMessage {
   const currentVersion = getCurrentVersion(message)
+  const images = currentVersion.images
+
+  if (images && images.length > 0) {
+    return {
+      role: message.from,
+      content: buildMessageContent(currentVersion.content, images),
+    }
+  }
+
   return {
     role: message.from,
     content: currentVersion.content,
