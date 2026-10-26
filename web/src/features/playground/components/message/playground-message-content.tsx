@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { ReactNode } from 'react'
+import { useCallback, useState, type MouseEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -48,11 +48,14 @@ import {
   type MessageAlignment,
 } from '../../lib'
 import { getMessageContentStyles } from '../../lib/message/message-styles'
-import type { Message } from '../../types'
+import type { Message, PlaygroundConfig } from '../../types'
+import { ImagePreviewDialog } from './image-preview-dialog'
 import { MessageError } from './message-error'
 import { MessageMetadata } from './message-metadata'
+import { VideoPlayer } from './video-player'
 
 type PlaygroundMessageContentProps = {
+  config: PlaygroundConfig
   actions: ReactNode
   alignment: MessageAlignment
   errorActions?: ReactNode
@@ -62,6 +65,7 @@ type PlaygroundMessageContentProps = {
 }
 
 export function PlaygroundMessageContent({
+  config,
   actions,
   alignment,
   errorActions,
@@ -83,6 +87,28 @@ export function PlaygroundMessageContent({
   const isMessageFinal =
     message.status !== MESSAGE_STATUS.LOADING &&
     message.status !== MESSAGE_STATUS.STREAMING
+
+  // 视频生成结果存在 media 上，播放器直接消费它；
+  // 「查看原始响应」时仍然看文本，所以把它排在最前面
+  const mediaVideoUrl =
+    message.media?.type === 'video' ? message.media.url : undefined
+  const showVideoPlayer = Boolean(mediaVideoUrl) && !isSourceVisible
+
+  const [preview, setPreview] = useState<{ alt: string; src: string } | null>(
+    null
+  )
+
+  // 消息正文里的图片走事件委托，避免改动 ai-elements 里共享的 markdown 渲染器
+  const handleContentClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement | null
+    const image = target?.closest('img')
+    if (!image) return
+
+    const src = image.getAttribute('src')
+    if (!src) return
+
+    setPreview({ src, alt: image.getAttribute('alt') ?? '' })
+  }, [])
 
   return (
     <div
@@ -108,7 +134,7 @@ export function PlaygroundMessageContent({
 
       {hasReasoning && (
         <Reasoning
-          defaultOpen
+          defaultOpen={false}
           duration={message.reasoning?.duration}
           isStreaming={message.isReasoningStreaming}
         >
@@ -121,7 +147,7 @@ export function PlaygroundMessageContent({
         <div className='flex items-center gap-2 py-2'>
           <Loader />
           <Shimmer className='text-sm' duration={1}>
-            {t('Responding...')}
+            {config.type === 0 ? t('Responding...') : t('GenerateIng')}
           </Shimmer>
         </div>
       )}
@@ -134,34 +160,52 @@ export function PlaygroundMessageContent({
         </>
       )}
 
-      {!isError && showMessageContent && (
+      {!isError && (showMessageContent || showVideoPlayer) && (
         <>
-          {isSourceVisible ? (
-            <CodeBlock
-              code={versionContent}
-              className='my-0 group-[.is-assistant]:w-full group-[.is-assistant]:max-w-[78ch]'
-              collapsedLines={24}
-              defaultCollapsed={false}
-              language='markdown'
-              maxExpandedLines={48}
-              showLineNumbers
-              showToolbar
-              title={t('Raw response')}
-            >
-              <CodeBlockCopyButton />
-            </CodeBlock>
+          {mediaVideoUrl && showVideoPlayer ? (
+            <VideoPlayer className='mb-2' src={mediaVideoUrl} />
           ) : (
-            <MessageContent
-              variant='flat'
-              className={cn(getMessageContentStyles())}
+            <div
+              className='group-[.is-assistant]:w-full [&_img]:cursor-zoom-in'
+              onClick={handleContentClick}
             >
-              <Response final={isMessageFinal}>{displayContent}</Response>
-            </MessageContent>
+              {isSourceVisible ? (
+                <CodeBlock
+                  code={versionContent}
+                  className='my-0 group-[.is-assistant]:w-full group-[.is-assistant]:max-w-[78ch]'
+                  collapsedLines={24}
+                  defaultCollapsed={false}
+                  language='markdown'
+                  maxExpandedLines={48}
+                  showLineNumbers
+                  showToolbar
+                  title={t('Raw response')}
+                >
+                  <CodeBlockCopyButton />
+                </CodeBlock>
+              ) : (
+                <MessageContent
+                  variant='flat'
+                  className={cn(getMessageContentStyles())}
+                >
+                  <Response final={isMessageFinal}>{displayContent}</Response>
+                </MessageContent>
+              )}
+            </div>
           )}
           <MessageMetadata alignment={alignment} message={message} />
           {actions}
         </>
       )}
+
+      <ImagePreviewDialog
+        alt={preview?.alt ?? ''}
+        onOpenChange={(open) => {
+          if (!open) setPreview(null)
+        }}
+        open={preview !== null}
+        src={preview?.src ?? ''}
+      />
     </div>
   )
 }

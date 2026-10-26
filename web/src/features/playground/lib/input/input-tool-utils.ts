@@ -36,14 +36,14 @@ type InputToolNotice = {
 }
 
 export const ATTACHMENT_ACTIONS = [
-  { action: 'upload-file', icon: FileIcon, label: 'Upload file' },
-  { action: 'upload-photo', icon: ImageIcon, label: 'Upload photo' },
-  {
-    action: 'take-screenshot',
-    icon: ScreenShareIcon,
-    label: 'Take screenshot',
-  },
-  { action: 'take-photo', icon: CameraIcon, label: 'Take photo' },
+  // { action: 'upload-file', icon: FileIcon, label: 'Upload file' },
+  { action: 'upload-photo', icon: ImageIcon, label: 'Upload photo' }
+  // {
+  //   action: 'take-screenshot',
+  //   icon: ScreenShareIcon,
+  //   label: 'Take screenshot',
+  // },
+  // { action: 'take-photo', icon: CameraIcon, label: 'Take photo' },
 ] satisfies AttachmentAction[]
 
 export function getAttachmentActionNotice(action: string): InputToolNotice {

@@ -28,11 +28,24 @@ import type {
 
 /**
  * Create a new message version
+ * `prompt` 只在图片/视频模式下传入，用于记住生成该版本时的原始提示词，
+ * 因为这类模式下 version.content 会被替换成图片 markdown / 视频地址，
+ * 无法再反推出用户真正输入的 prompt。
  */
-export function createMessageVersion(content: string): MessageVersion {
+export function createMessageVersion(
+  content: string,
+  prompt?: string
+): MessageVersion {
+  if (prompt === undefined) {
+    return {
+      id: nanoid(),
+      content,
+    }
+  }
   return {
     id: nanoid(),
     content,
+    prompt,
   }
 }
 
@@ -76,12 +89,13 @@ export function updateCurrentVersionContent(
  */
 export function createUserMessage(
   content: string,
-  createdAt: number = Date.now()
+  createdAt: number = Date.now(),
+  prompt?: string
 ): Message {
   return {
     key: nanoid(),
     from: MESSAGE_ROLES.USER,
-    versions: [createMessageVersion(content)],
+    versions: [createMessageVersion(content, prompt)],
     createdAt,
   }
 }
@@ -90,12 +104,13 @@ export function createUserMessage(
  * Create a loading assistant message
  */
 export function createLoadingAssistantMessage(
-  startedAt: number = Date.now()
+  startedAt: number = Date.now(),
+  prompt?: string
 ): Message {
   return {
     key: nanoid(),
     from: MESSAGE_ROLES.ASSISTANT,
-    versions: [createMessageVersion('')],
+    versions: [createMessageVersion('', prompt)],
     createdAt: startedAt,
     startedAt,
     reasoning: undefined,

@@ -53,6 +53,7 @@ import type { GroupOption, ModelOption, PlaygroundConfig } from '../types'
 type UsePlaygroundOptionsParams = {
   currentGroup: string
   currentModel: string
+  currentType: number
   setGroups: (groups: GroupOption[]) => void
   setModels: (models: ModelOption[]) => void
   updateConfig: <K extends keyof PlaygroundConfig>(
@@ -64,6 +65,7 @@ type UsePlaygroundOptionsParams = {
 export function usePlaygroundOptions({
   currentGroup,
   currentModel,
+  currentType,
   setGroups,
   setModels,
   updateConfig,
@@ -76,9 +78,9 @@ export function usePlaygroundOptions({
     isError: isModelsError,
     isLoading: isLoadingModels,
   } = useQuery({
-    queryKey: ['playground-models', currentGroup],
+    queryKey: ['playground-models', currentGroup, currentType],
     queryFn: async () =>
-      requireServerSuccess(await getUserModels(currentGroup)),
+      requireServerSuccess(await getUserModels(currentGroup, currentType)),
     enabled: currentGroup !== '',
   })
 

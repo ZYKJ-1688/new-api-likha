@@ -16,8 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { DEFAULT_CONFIG, DEFAULT_PARAMETER_ENABLED } from '../../constants'
-import type { Message, ParameterEnabled, PlaygroundConfig } from '../../types'
+import { DEFAULT_CONFIG, DEFAULT_PARAMETER_ENABLED, MODEL_LAN_TYPE } from '../../constants'
+import type { Message, ParameterEnabled, PlaygroundConfig, ConversationTab } from '../../types'
 import {
   loadConfig,
   loadMessages,
@@ -37,7 +37,7 @@ export function getInitialParameterEnabled(): ParameterEnabled {
 }
 
 export function getInitialMessages(): Message[] {
-  return loadMessages() || []
+  return loadMessages(MODEL_LAN_TYPE.text as ConversationTab) || []
 }
 
 export function applyMessageStateUpdate(
