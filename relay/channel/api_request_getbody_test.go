@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
@@ -184,6 +186,7 @@ type stubTaskAdaptor struct {
 	TaskAdaptor
 	baseURL     string
 	capturedReq *http.Request
+	headers     http.Header
 }
 
 func (s *stubTaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
@@ -192,6 +195,11 @@ func (s *stubTaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, 
 
 func (s *stubTaskAdaptor) BuildRequestHeader(c *gin.Context, req *http.Request, info *relaycommon.RelayInfo) error {
 	s.capturedReq = req
+	for key, values := range s.headers {
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
+	}
 	return nil
 }
 
@@ -248,6 +256,229 @@ func TestDoTaskApiRequest_KeepsReplayableGetBody(t *testing.T) {
 		require.NoError(t, rc.Close())
 		assert.Equal(t, payload, replay, "replay %d must equal the original payload", i+1)
 	}
+}
+
+func TestPlaygroundVideoUpstreamRequestLog(t *testing.T) {
+	service.InitHttpClient()
+	previousDebug := common.DebugEnabled
+	common.DebugEnabled = false
+	t.Cleanup(func() { common.DebugEnabled = previousDebug })
+	var output bytes.Buffer
+	common.LogWriterMu.Lock()
+	previousWriter := gin.DefaultWriter
+	gin.DefaultWriter = &output
+	common.LogWriterMu.Unlock()
+	t.Cleanup(func() {
+		common.LogWriterMu.Lock()
+		gin.DefaultWriter = previousWriter
+		common.LogWriterMu.Unlock()
+	})
+
+	payload := []byte(`{"model":"vendor-model","content":[{"type":"text","text":"a running cat"}],"ratio":"9:16","resolution":"720p","duration":5,"seed":9007199254740993,"watermark":false,"metadata":{"api_key":"body-secret","url":"https://name:pass@cdn.example/ref.png?version=2&X-Amz-Signature=signed-secret#private-fragment"},"image":"data:image/png;base64,inline-secret"}`)
+	type receivedRequest struct {
+		body         []byte
+		method, auth string
+		err          error
+	}
+	received := make(chan receivedRequest, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		received <- receivedRequest{body, r.Method, r.Header.Get("Authorization"), err}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	for _, tt := range []struct {
+		method, path string
+		marked       bool
+	}{
+		{http.MethodPost, "/pg/videos", true},
+		{http.MethodPut, "/pg/videos", true}, // Plugin changed the outbound method.
+		{http.MethodPost, "/v1/videos", false},
+		{http.MethodPost, "/pg/images/generations", false},
+		{http.MethodGet, "/pg/videos/task_x", false},
+	} {
+		t.Run(tt.method+tt.path, func(t *testing.T) {
+			output.Reset()
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(tt.method, tt.path, nil)
+			common.SetContextKey(c, constant.ContextKeyPlaygroundVideoLog, tt.marked)
+			c.Set(common.RequestIdKey, "request-log-test")
+			info := &relaycommon.RelayInfo{
+				ChannelMeta:     &relaycommon.ChannelMeta{ChannelId: 7, ChannelType: 61, UpstreamModelName: "vendor-model", ApiKey: "channel-secret"},
+				OriginModelName: "client-alias",
+				TaskRelayInfo:   &relaycommon.TaskRelayInfo{PublicTaskID: "task_public"},
+			}
+			adaptor := &stubTaskAdaptor{baseURL: server.URL, headers: http.Header{
+				"Content-Type":  {"application/json"},
+				"Authorization": {"Bearer header-secret"},
+				"Cookie":        {"session=cookie-secret"},
+			}}
+			resp, err := DoTaskApiRequest(adaptor, c, info, bytes.NewReader(payload))
+			require.NoError(t, err)
+			require.NoError(t, resp.Body.Close())
+			sent := <-received
+			require.NoError(t, sent.err)
+			assert.Equal(t, payload, sent.body)
+			assert.Equal(t, tt.method, sent.method)
+			assert.Equal(t, "Bearer header-secret", sent.auth)
+			for range 2 {
+				replay, err := adaptor.capturedReq.GetBody()
+				require.NoError(t, err)
+				body, err := io.ReadAll(replay)
+				require.NoError(t, err)
+				require.NoError(t, replay.Close())
+				assert.Equal(t, payload, body)
+			}
+			if !tt.marked {
+				assert.NotContains(t, output.String(), "playground_video_upstream_request")
+				return
+			}
+			log := output.String()
+			assert.Contains(t, log, "request-log-test")
+			_, raw, found := strings.Cut(log, "playground_video_upstream_request ")
+			require.True(t, found)
+			var record struct {
+				Method        string                       `json:"method"`
+				URL           string                       `json:"url"`
+				ContentType   string                       `json:"content_type"`
+				ChannelID     int                          `json:"channel_id"`
+				Model         string                       `json:"model"`
+				UpstreamModel string                       `json:"upstream_model"`
+				TaskID        string                       `json:"task_id"`
+				Body          map[string]common.RawMessage `json:"body"`
+			}
+			require.NoError(t, common.UnmarshalJsonStr(strings.TrimSpace(raw), &record))
+			assert.Equal(t, tt.method, record.Method)
+			assert.Equal(t, server.URL+"/v1/video/generations", record.URL)
+			assert.Equal(t, "application/json", record.ContentType)
+			assert.Equal(t, 7, record.ChannelID)
+			assert.Equal(t, "client-alias", record.Model)
+			assert.Equal(t, "vendor-model", record.UpstreamModel)
+			assert.Equal(t, "task_public", record.TaskID)
+			assert.JSONEq(t, `"9:16"`, string(record.Body["ratio"]))
+			assert.JSONEq(t, `"720p"`, string(record.Body["resolution"]))
+			assert.Equal(t, "9007199254740993", string(record.Body["seed"]))
+			assert.Equal(t, "false", string(record.Body["watermark"]))
+			assert.Contains(t, log, "a running cat")
+			assert.Contains(t, log, "cdn.example/ref.png")
+			assert.Contains(t, log, "version=2")
+			for _, secret := range []string{"body-secret", "signed-secret", "private-fragment", "name:pass", "inline-secret", "header-secret", "cookie-secret", "channel-secret"} {
+				assert.NotContains(t, log, secret)
+			}
+		})
+	}
+}
+
+func TestPlaygroundVideoLogBodySafety(t *testing.T) {
+	var form bytes.Buffer
+	writer := multipart.NewWriter(&form)
+	require.NoError(t, writer.WriteField("ratio", "9:16"))
+	require.NoError(t, writer.WriteField("ratio", "16:9"))
+	require.NoError(t, writer.WriteField("metadata", `{"api_key":"form-secret","resolution":"720p"}`))
+	require.NoError(t, writer.WriteField("broken", `{"api_key":"broken-secret"`))
+	file, err := writer.CreateFormFile("reference", "reference.png")
+	require.NoError(t, err)
+	_, err = file.Write([]byte("file-secret"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	for _, tt := range []struct {
+		name, contentType, body, expected string
+	}{
+		{"json", "application/json", `{"duration":0,"enabled":false,"items":[{"Authorization":"credential","session_token":"credential"}],"metadata":"{\"api_key\":\"credential\"}","b64_json":"credential"}`, `{"duration":0,"enabled":false,"items":[{"Authorization":"[redacted]","session_token":"[redacted]"}],"metadata":{"api_key":"[redacted]"},"b64_json":"[omitted: inline media]"}`},
+		{"short inline image", "application/json", `{"image":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB","images":["iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB","https://cdn.example/ref.png"]}`, `{"image":"[omitted: inline media]","images":["[omitted: inline media]","https://cdn.example/ref.png"]}`},
+		{"invalid", "application/json", `{"api_key":"credential"`, `"[omitted: invalid JSON or nesting limit]"`},
+		{"depth limit", "application/json", strings.Repeat("[", 34) + `"credential"` + strings.Repeat("]", 34), `"[omitted: invalid JSON or nesting limit]"`},
+		{"oversize", "application/json", strings.Repeat("x", playgroundVideoInspectLimit+1), `"[omitted: body inspection limit]"`},
+		{"unknown length oversize", "application/json", strings.Repeat("x", playgroundVideoInspectLimit+1), `"[omitted: body inspection limit]"`},
+		{"unsupported", "application/octet-stream", "credential", `"[omitted: unsupported content type]"`},
+		{"multipart", writer.FormDataContentType(), form.String(), `{"fields":{"ratio":["9:16","16:9"],"metadata":[{"api_key":"[redacted]","resolution":"720p"}],"broken":["[omitted: invalid embedded JSON]"]},"files":[{"field":"reference","filename":"reference.png","content_type":"application/octet-stream","size":11}]}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodPost, "https://video.example/submit", strings.NewReader(tt.body))
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", tt.contentType)
+			if tt.name == "unknown length oversize" {
+				req.ContentLength = -1
+			}
+			encoded, err := common.Marshal(playgroundVideoLogBody(req))
+			require.NoError(t, err)
+			assert.JSONEq(t, tt.expected, string(encoded))
+			actual, err := io.ReadAll(req.Body)
+			require.NoError(t, err)
+			assert.Equal(t, tt.body, string(actual))
+		})
+	}
+
+	for _, tt := range []struct {
+		name, expected string
+		getBody        func() (io.ReadCloser, error)
+	}{
+		{"no replay", "[omitted: body is not replayable]", nil},
+		{"replay fails", "[omitted: body replay unavailable]", func() (io.ReadCloser, error) { return nil, fmt.Errorf("secret error") }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodPost, "https://video.example", strings.NewReader(`{"resolution":"720p"}`))
+			require.NoError(t, err)
+			req.GetBody = tt.getBody
+			assert.Equal(t, tt.expected, playgroundVideoLogBody(req))
+			body, err := io.ReadAll(req.Body)
+			require.NoError(t, err)
+			assert.Equal(t, `{"resolution":"720p"}`, string(body))
+		})
+	}
+
+	for _, raw := range []string{
+		"https://name:credential@video.example/submit?api_key=credential&ratio=9%3A16#credential",
+		"https://video.example/submit?sig=credential&ratio=9%3A16",
+		"https://video.example/submit?auth_key=credential&hdnts=credential&ratio=9%3A16",
+		"https://video.example/submit?X-Goog-Credential=credential&ratio=9%3A16",
+	} {
+		safe := playgroundVideoLogURL(raw)
+		assert.Contains(t, safe, "video.example/submit")
+		assert.Contains(t, safe, "ratio=9%3A16")
+		assert.NotContains(t, safe, "credential")
+	}
+	assert.Equal(t, "[omitted: invalid URL query]", playgroundVideoLogURL("https://video.example?key=%zzcredential"))
+	safe := playgroundVideoLogURL("https://video.example/submit?callback=https%3A%2F%2Fcdn.example%2Ffile%3Fsig%3Dcredential")
+	assert.NotContains(t, safe, "credential")
+	assert.Contains(t, safe, "video.example/submit")
+}
+
+func TestPlaygroundVideoLogBounds(t *testing.T) {
+	var output bytes.Buffer
+	common.LogWriterMu.Lock()
+	previousWriter := gin.DefaultWriter
+	gin.DefaultWriter = &output
+	common.LogWriterMu.Unlock()
+	t.Cleanup(func() {
+		common.LogWriterMu.Lock()
+		gin.DefaultWriter = previousWriter
+		common.LogWriterMu.Unlock()
+	})
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	common.SetContextKey(c, constant.ContextKeyPlaygroundVideoLog, true)
+	payload := `{"content":[` + strings.Repeat(`"a detailed scene",`, 1500) + `"end"]}`
+	req, err := http.NewRequest(http.MethodPost, "https://video.example/submit", strings.NewReader(payload))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	logPlaygroundVideoRequest(c, req, nil)
+	assert.Contains(t, output.String(), "[omitted: body log limit]")
+	assert.NotContains(t, output.String(), "a detailed scene")
+	assert.Less(t, output.Len(), playgroundVideoLogLimit)
+	body, err := io.ReadAll(req.Body)
+	require.NoError(t, err)
+	assert.Equal(t, payload, string(body))
+
+	output.Reset()
+	common.SetContextKey(c, constant.ContextKeyPlaygroundVideoLog, false)
+	req.GetBody = func() (io.ReadCloser, error) {
+		t.Fatal("unmarked requests must not inspect body")
+		return nil, nil
+	}
+	logPlaygroundVideoRequest(c, req, nil)
+	assert.Empty(t, output.String())
 }
 
 type h2ServerResult struct {

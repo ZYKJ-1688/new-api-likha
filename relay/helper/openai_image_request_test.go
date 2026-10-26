@@ -157,6 +157,51 @@ func TestImageBillingRequestValidatesProviderCountWithoutOverriding(t *testing.T
 	}
 }
 
+// TestSeedreamImageRequestFieldsSurviveValidation guards the doubao seedream
+// passthrough scalars: they must pass ingress validation and survive the
+// outbound re-marshal, including an explicit false.
+func TestSeedreamImageRequestFieldsSurviveValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		body     string
+		expected []string
+	}{
+		{
+			name: "full seedream shape",
+			body: `{"model":"doubao-seedream-5-0-pro-260628","prompt":"p","image":"https://example.com/a.png","layer_decomposition":true,"size":"2K","output_format":"jpeg","response_format":"url","watermark":true}`,
+			expected: []string{
+				`"layer_decomposition":true`,
+				`"image":"https://example.com/a.png"`,
+				`"size":"2K"`,
+				`"output_format":"jpeg"`,
+				`"watermark":true`,
+			},
+		},
+		{
+			name: "explicit false is preserved",
+			body: `{"model":"doubao-seedream-5-0-pro-260628","prompt":"p","layer_decomposition":false,"watermark":false}`,
+			expected: []string{
+				`"layer_decomposition":false`,
+				`"watermark":false`,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewBufferString(tc.body))
+			c.Request.Header.Set("Content-Type", "application/json")
+			request, err := GetAndValidOpenAIImageRequest(c, relayconstant.RelayModeImagesGenerations)
+			require.NoError(t, err)
+			require.NotNil(t, request.LayerDecomposition)
+			marshaled, err := common.Marshal(request)
+			require.NoError(t, err)
+			for _, fragment := range tc.expected {
+				assert.Contains(t, string(marshaled), fragment)
+			}
+		})
+	}
+}
+
 // TestGetAndValidOpenAIImageRequestNBounds guards the billing invariant that
 // the image generation count can never reach quota calculation with a value
 // large enough to overflow int64 into a negative charge.

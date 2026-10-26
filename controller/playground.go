@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -13,6 +15,24 @@ import (
 )
 
 func Playground(c *gin.Context) {
+	playgroundRelay(c, func(c *gin.Context) { Relay(c, types.RelayFormatOpenAI) })
+}
+
+func PlaygroundImage(c *gin.Context) {
+	playgroundRelay(c, func(c *gin.Context) {
+		RelayTaskPluginEndpoint(c, func(c *gin.Context) { Relay(c, types.RelayFormatOpenAIImage) })
+	})
+}
+
+// PlaygroundVideoSubmit relays a session-authenticated playground video
+// submission through the task-plugin endpoint chain; the endpoint falls back
+// to RelayTask, which resolves the task platform from the channel type.
+func PlaygroundVideoSubmit(c *gin.Context) {
+	common.SetContextKey(c, constant.ContextKeyPlaygroundVideoLog, true)
+	playgroundRelay(c, func(c *gin.Context) { RelayTaskPluginEndpoint(c, RelayTask) })
+}
+
+func playgroundRelay(c *gin.Context, relay func(c *gin.Context)) {
 	var newAPIError *types.NewAPIError
 
 	defer func() {
@@ -29,7 +49,9 @@ func Playground(c *gin.Context) {
 		return
 	}
 
-	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatOpenAI, nil, nil)
+	// The format only matters for UsingGroup here; the handler passed in
+	// builds its own relay info (RelayTask does the same for video).
+	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatTask, nil, nil)
 	if err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 		return
@@ -52,5 +74,5 @@ func Playground(c *gin.Context) {
 	}
 	_ = middleware.SetupContextForToken(c, tempToken)
 
-	Relay(c, types.RelayFormatOpenAI)
+	relay(c)
 }

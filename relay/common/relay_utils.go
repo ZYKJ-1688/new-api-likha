@@ -172,6 +172,14 @@ func validateMultipartTaskRequest(c *gin.Context, info *RelayInfo, action string
 		Metadata: make(map[string]any),
 	}
 
+	// Keep these fields in metadata too for plugins using the legacy form mapping.
+	if values, ok := formData["ratio"]; ok && len(values) > 0 {
+		req.Ratio = &values[0]
+	}
+	if values, ok := formData["resolution"]; ok && len(values) > 0 {
+		req.Resolution = &values[0]
+	}
+
 	if durationStr := formData.Get("seconds"); durationStr != "" {
 		if duration, err := strconv.Atoi(durationStr); err == nil {
 			req.Duration = duration
