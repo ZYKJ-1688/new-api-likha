@@ -237,7 +237,6 @@ export function usePlaygroundState() {
     videoMessages,
 
     config,
-    setConfig,
     parameterEnabled,
     // messages 保留，对外返回当前tab的消息，兼容原有代码
     messages: getCurrentMessages(),

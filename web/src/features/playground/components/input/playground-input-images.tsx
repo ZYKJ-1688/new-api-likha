@@ -20,7 +20,6 @@ type ImageItem = {
 
 interface PlaygroundImagesProps {
   config: any
-  setConfig: (value: any) => void
   activeTab: number
   onImagesChange: (list: any[]) => void
   /** 文字模式提交成功后自增的信号：消息已带上图片，上传区清空列表 */
@@ -213,7 +212,7 @@ function ImageCard({ img, index, total, expanded, hoveredIndex, onRemove, plain 
   )
 }
 
-export function PlaygroundInputImages({ config, setConfig, activeTab, onImagesChange, resetSignal = 0 }: PlaygroundImagesProps) {
+export function PlaygroundInputImages({ config, activeTab, onImagesChange, resetSignal = 0 }: PlaygroundImagesProps) {
   const { t } = useTranslation()
   const [imageList, setImageList] = useState<ImageItem[]>([])
   const [expanded, setExpanded] = useState(false)
