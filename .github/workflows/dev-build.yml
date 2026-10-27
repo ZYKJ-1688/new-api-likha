@@ -3,7 +3,7 @@ name: dev-build
 # 雅加达 dev 环境发布流水线（GitOps）
 #
 # 链路：push development → 构建镜像 → 推马尼拉 ACR → 回写 ops 仓（写 digest）→ ArgoCD 收敛
-# 真源：new-api-yxw-ops/overlays/jkt-dev/kustomization.yaml
+# 真源：new-api-likha-ops/overlays/jkt-dev/kustomization.yaml
 #
 # 三条红线：
 #   1. 绝不用 tag 触发（本仓 release.yml 监听 tags:'*'，打 tag 会启动三平台二进制构建）
