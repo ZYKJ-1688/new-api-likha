@@ -9,6 +9,7 @@ name: dev-build
 #   1. 绝不用 tag 触发（本仓 release.yml 监听 tags:'*'，打 tag 会启动三平台二进制构建）
 #   2. 绝不把 kubeconfig 放进 CI（CI 不认识集群，只改 Git）
 #   3. ops 回写失败必须让 job 红（否则「镜像推了但没部署」是最难查的静默失败）
+#   4. 镜像用「不可变 tag」引用（不是 digest，也不是 latest）：ACR 仓库已开 Immutable
 
 on:
   push:
@@ -131,24 +132,28 @@ jobs:
         run: |
           git clone --depth 1 "https://x-access-token:${OPS_REPO_TOKEN}@github.com/${OPS_REPO}.git" ops
 
-      - name: Set image digest
+      - name: Set image tag
         working-directory: ops
         env:
-          DIGEST: ${{ needs.build-push.outputs.digest }}
           # ⚠️ 不要用 needs.build-push.outputs.image：实测传过来是空串，
-          #    导致 newName 被写空、镜像退化成 docker.io/library/newapi-likha@sha256:…
+          #    导致 newName 被写空、镜像退化成 docker.io/library/<name>@sha256:…
           #    然后 ImagePullBackOff。这里直接重拼，只依赖 secrets + job env。
           ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
           TAG: ${{ needs.build-push.outputs.tag }}
+          DIGEST: ${{ needs.build-push.outputs.digest }}
         run: |
           IMAGE="${ACR_REGISTRY}/${ACR_NAMESPACE}/${ACR_REPO}"
           case "$IMAGE" in
             *aliyuncs.com/*) : ;;
             *) echo "::error::ACR_REGISTRY 拼接异常，拒绝写入: '$IMAGE'"; exit 1 ;;
           esac
-          echo "target image = ${IMAGE}@${DIGEST:0:19}…"
-          # 只写 digest（内容寻址），不写 tag（tag 可被覆盖，回滚时不可靠）
-          bash scripts/set-image.sh "$OPS_ENV" "${IMAGE}@${DIGEST}"
+          echo "target image = ${IMAGE}:${TAG}"
+          echo "  digest=${DIGEST}（仅记录，不写入清单）"
+          # 写不可变 tag（2026-10-27 决策）。
+          # ACR 仓库已开启「不可变」：同名 tag 不可覆盖、不可删除 ⇒ tag 等价于稳定引用，
+          # 回滚语义与 digest 一致，而 kubectl/控制台/ArgoCD 里可读性远好于 64 位 digest。
+          # ★ 前提：ACR 的「不可变」必须保持开启。一旦关闭，tag 可被覆盖，回滚会指向错误镜像。
+          bash scripts/set-image.sh "$OPS_ENV" "${IMAGE}:${TAG}"
           git diff --stat
 
       - name: Commit & push
