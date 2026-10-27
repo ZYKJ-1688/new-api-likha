@@ -5,9 +5,6 @@
 - **部署清单**的真源在私有仓 [`ZYKJ-1688/new-api-likha-ops`](https://github.com/ZYKJ-1688/new-api-likha-ops)
 - **运维脚本**（装 ArgoCD / 注入凭据 / 验收体检）也在那个仓的 `argocd/bootstrap/`
 
-> **为什么脚本不放在本仓**：本仓是 **public** 仓库，而 bootstrap 脚本里有集群 ID、
-> 节点选取逻辑、ALB/证书细节、`--insecure` 之类的实现。放进私有 ops 仓：
-> 团队共享 + 有版本管理，又不对公网暴露。本文件只留「链路怎么走、红线是什么」。
 
 ## 链路
 
