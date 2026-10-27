@@ -28,7 +28,6 @@ import {
 export function Playground() {
   const {
     config,
-    setConfig,
     parameterEnabled,
     messages,
     isLoadingMessages,
@@ -104,7 +103,6 @@ export function Playground() {
       <div className='mx-auto w-full max-w-4xl'>
         <PlaygroundInput
           config={config}
-          setConfig={setConfig}
           disabled={isGenerating}
           groups={groups}
           groupValue={config.group}

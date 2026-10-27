@@ -33,13 +33,12 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { getSearchActionNotice } from '../../lib'
-import { CREATE_MODEL_TYPE } from '../../constants'
+import { CREATE_MODEL_TYPE, MODEL_LAN_TYPE } from '../../constants'
 import type { ParameterEnabled, PlaygroundConfig } from '../../types'
 import { PlaygroundParameterPanel } from './playground-parameter-panel'
 
 type PlaygroundInputToolsProps = {
   config: PlaygroundConfig
-  setConfig: React.Dispatch<React.SetStateAction<PlaygroundConfig>>
   disabled?: boolean
   hasMessages?: boolean
   onClearMessages?: () => void
@@ -56,7 +55,6 @@ type PlaygroundInputToolsProps = {
 
 export function PlaygroundInputTools({
   config,
-  setConfig,
   disabled,
   hasMessages = false,
   onClearMessages,
@@ -70,9 +68,9 @@ export function PlaygroundInputTools({
   // label 存 i18n key（英文源串），实际文案在渲染处过 t()，
   // 这样切换语言时不用依赖 useMemo 重新计算
   const typeList = [
-    { label: t('Text mode'), value: 0 },
-    { label: t('Image mode'), value: 1 },
-    { label: t('Video mode'), value: 2 }
+    { label: t('Text mode'), value: MODEL_LAN_TYPE.text },
+    { label: t('Image mode'), value: MODEL_LAN_TYPE.image },
+    { label: t('Video mode'), value: MODEL_LAN_TYPE.video }
   ]
 
   const referenceModeList = useMemo(() => [
@@ -135,7 +133,7 @@ export function PlaygroundInputTools({
                     dark:data-[highlighted]:!bg-white/15
                     ${isSelected ? '!bg-black/10 dark:!bg-white/15' : ''}
                   `}
-                  onClick={() => setConfig((prev: PlaygroundConfig) => ({ ...prev, type: item.value }))}>{item.label}</Menu.Item>
+                  onClick={() => onConfigChange('type', item.value)}>{item.label}</Menu.Item>
                 })}
               </Menu.Popup>
             </Menu.Positioner>
@@ -171,7 +169,7 @@ export function PlaygroundInputTools({
                       dark:data-[highlighted]:!bg-white/15
                       ${isSelected ? '!bg-black/10 dark:!bg-white/15' : ''}
                     `}
-                    onClick={() => setConfig((prev: PlaygroundConfig) => ({ ...prev, createVideoMode: item.value }))}>
+                    onClick={() => onConfigChange('createVideoMode', item.value)}>
                       <div className='flex flex-row gap-2 items-center'>
                         {item.icon}
                         <span>{item.label}</span>

@@ -40,7 +40,6 @@ import { PlaygroundInputImages } from './playground-input-images'
 
 interface PlaygroundInputProps {
   config: PlaygroundConfig
-  setConfig: (value: any) => void
   onSubmit: (text: string, images?: string[]) => void
   onStop?: () => void
   disabled?: boolean
@@ -67,7 +66,6 @@ interface PlaygroundInputProps {
 
 export function PlaygroundInput({
   config,
-  setConfig,
   onSubmit,
   onStop,
   disabled,
@@ -156,7 +154,6 @@ export function PlaygroundInput({
         <div className='w-full flex flex-row'>
           <PlaygroundInputImages
             config={config}
-            setConfig={setConfig}
             activeTab={config.type}
             onImagesChange={handleImagesChange}
             resetSignal={imagesResetSignal}
@@ -190,7 +187,6 @@ export function PlaygroundInput({
             tools={
               <PlaygroundInputTools
                 config={config}
-                setConfig={setConfig}
                 disabled={disabled}
                 hasMessages={hasMessages}
                 onConfigChange={onConfigChange}
