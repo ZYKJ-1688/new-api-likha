@@ -16,11 +16,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import {
+  ArrowUp01Icon,
+  InformationCircleIcon,
+  RefreshIcon,
+} from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 import { ROLE } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
@@ -72,6 +79,46 @@ function AdminSystemUpdateAction(props: SystemUpdateActionProps) {
         : versionDescription
   }
 
+  let triggerContent = (
+    <>
+      {update.checking ? (
+        <Spinner data-icon='inline-start' aria-hidden='true' />
+      ) : (
+        <HugeiconsIcon
+          icon={update.shouldNotify ? ArrowUp01Icon : RefreshIcon}
+          data-icon='inline-start'
+          aria-hidden='true'
+        />
+      )}
+      <span className={cn(compact && 'hidden lg:inline')}>{label}</span>
+    </>
+  )
+  if (versionPresentation) {
+    triggerContent = (
+      <>
+        <HugeiconsIcon
+          icon={update.shouldNotify ? ArrowUp01Icon : InformationCircleIcon}
+          className={cn(
+            '@min-[22rem]/system-brand:hidden',
+            update.shouldNotify && 'text-primary'
+          )}
+          aria-hidden='true'
+        />
+        <span className='hidden max-w-32 truncate font-mono text-xs @min-[22rem]/system-brand:inline'>
+          {version}
+        </span>
+        {update.shouldNotify && (
+          <Badge
+            variant='secondary'
+            className='bg-primary/10 text-primary hidden h-5 px-1.5 text-[10px] @min-[22rem]/system-brand:inline-flex'
+          >
+            {t('Update available')}
+          </Badge>
+        )}
+      </>
+    )
+  }
+
   return (
     <SystemUpdateDialog
       open={open}
@@ -98,6 +145,7 @@ function AdminSystemUpdateAction(props: SystemUpdateActionProps) {
               'border-primary/40 bg-primary/10 text-primary'
           )}
         >
+          {triggerContent}
           {update.shouldNotify && (versionPresentation || compact) && (
             <Badge
               aria-hidden='true'
