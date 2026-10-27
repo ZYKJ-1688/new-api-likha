@@ -46,6 +46,7 @@ const clients: QueryClient[] = []
 
 function channel(name: string): Channel {
   return {
+    is_official: 0,
     id: 3,
     type: 1,
     key: '',

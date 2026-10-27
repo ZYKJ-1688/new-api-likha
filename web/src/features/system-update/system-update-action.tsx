@@ -145,8 +145,7 @@ function AdminSystemUpdateAction(props: SystemUpdateActionProps) {
               'border-primary/40 bg-primary/10 text-primary'
           )}
         >
-          {/* 注释版本信息 */}
-          {/* {triggerContent} */}
+          {triggerContent}
           {update.shouldNotify && (versionPresentation || compact) && (
             <Badge
               aria-hidden='true'

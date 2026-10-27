@@ -22,8 +22,6 @@ import { requireServerSuccess } from '@/lib/server-error-message'
 import {
   API_ENDPOINTS,
   ERROR_MESSAGES,
-  MOCK_VIDEO_LATENCY_MS,
-  MOCK_VIDEO_URL,
   MODEL_LAN_TYPE,
 } from './constants'
 import { normalizeImageGenerationResponse } from './lib/streaming/response-normalizer'
@@ -33,7 +31,6 @@ import {
 } from './lib/storage/video-task-store'
 import type {
   ChatCompletionRequest,
-  ChatCompletionResponse,
   ConversationTab,
   ModelOption,
   GroupOption,

@@ -2642,7 +2642,10 @@ export function ChannelMutateDrawer({
                         })
                     : undefined
                 }
-                draftRequest={redirectPanelActive ? null : mappingDraftRequest}
+                // 官方模型映射与 model picker 的「Redirect」交互无关：
+                // 早前这里同样接了 mappingDraftRequest，导致点 Redirect 时两个编辑器
+                // 都会追加草稿行并争抢焦点，最终焦点落到「官方上游字段」。
+                draftRequest={null}
                 onDraftRequestHandled={() => setMappingDraftRequest(null)}
               />
             </FormControl>

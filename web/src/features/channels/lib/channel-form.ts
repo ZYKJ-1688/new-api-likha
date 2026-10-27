@@ -32,6 +32,7 @@ import {
   OPENAI_FIELD_PASSTHROUGH_TYPES,
 } from '../constants'
 import type { Channel } from '../types'
+import { supportsResponsesWebSocket } from './responses-websocket'
 import {
   CHANNEL_TYPE_ADVANCED_CUSTOM,
   advancedCustomConfigUsesRelativeUpstreamPath,
@@ -670,8 +671,11 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
     pass_through_body_enabled:
       formData.type !== CHANNEL_TYPE_ADVANCED_CUSTOM &&
       formData.pass_through_body_enabled === true,
+    // 用 supportsResponsesWebSocket 作为唯一真源：早前这里硬编码 `type === 1 || 57`，
+    // 而组件按 RESPONSES_WEBSOCKET_CHANNEL_TYPES（含 ADVANCED_CUSTOM / SUB2API / NEW_API）
+    // 显式渲染开关 ⇒ 58/59/60 等类型能拨动开关但保存时被静默丢弃。
     responses_websocket_enabled:
-      (formData.type === 1 || formData.type === 57) &&
+      supportsResponsesWebSocket(formData.type) &&
       formData.responses_websocket_enabled === true,
     system_prompt: formData.system_prompt || '',
     system_prompt_override: formData.system_prompt_override || false,
