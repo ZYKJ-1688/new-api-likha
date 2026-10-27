@@ -28,7 +28,7 @@ concurrency:
 
 env:
   ACR_NAMESPACE: newapi-dev
-  ACR_REPO: newapi-likha
+  ACR_REPO: newapi-master
   OPS_REPO: ZYKJ-1688/new-api-likha-ops
   OPS_ENV: jkt-dev
   SMOKE_URL: https://dev.likha.hk/api/status
