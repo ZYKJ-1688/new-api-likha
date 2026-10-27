@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Code, ListPlus, Plus, Table, Trash2 } from 'lucide-react'
+import { Code, Plus, Table, Trash2 } from 'lucide-react'
 import {
   useEffect,
   useEffectEvent,
@@ -443,7 +443,7 @@ export function OfficialModelMappingEditor(props: ModelMappingEditorProps) {
                     emptyText='No matching items'
                     allowCustomValue
                     disabled={props.disabled}
-                    aria-label={t('Request Model Name')}
+                    aria-label={`${t('Official')} · ${t('Request Model Name')}`}
                   />
                   <ComboboxInput
                     id={rowInputId(row.id, 'to')}
@@ -456,7 +456,7 @@ export function OfficialModelMappingEditor(props: ModelMappingEditorProps) {
                     emptyText='No matching items'
                     allowCustomValue
                     disabled={props.disabled}
-                    aria-label={t('Upstream Model Name')}
+                    aria-label={`${t('Official')} · ${t('Upstream Model Name')}`}
                   />
                   <Button
                     type='button'
@@ -465,7 +465,7 @@ export function OfficialModelMappingEditor(props: ModelMappingEditorProps) {
                     onClick={() => handleDeleteRow(row.id)}
                     disabled={props.disabled}
                     className='h-10 w-10'
-                    aria-label={t('Delete mapping')}
+                    aria-label={`${t('Official')} · ${t('Delete mapping')}`}
                   >
                     <Trash2 className='h-4 w-4' aria-hidden='true' />
                   </Button>
@@ -493,7 +493,7 @@ export function OfficialModelMappingEditor(props: ModelMappingEditorProps) {
             className='w-full'
           >
             <Plus className='mr-2 h-4 w-4' />
-            {t('Add Mapping')}
+            {`${t('Official')} · ${t('Add Mapping')}`}
           </Button>
         </TabsContent>
         <TabsContent value='json' className='space-y-2'>
