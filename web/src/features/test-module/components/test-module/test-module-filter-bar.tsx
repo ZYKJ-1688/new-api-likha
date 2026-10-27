@@ -16,7 +16,6 @@ import { useState, useEffect } from 'react'
 import { Combobox } from '@/components/ui/combobox'
 import { MultiSelect } from '@/components/multi-select'
 import type { Table } from '@tanstack/react-table'
-import { useTranslation } from 'react-i18next'
 import { Input } from '@/components/ui/input'
 import {
   LogsFilterField,
@@ -39,7 +38,6 @@ export function TestModuleFilterBar(props: {
   onReset: () => void
   onRefresh: (value: any) => void
 }) {
-  const { t } = useTranslation()
   // 只保留弹窗开关状态
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
   const [moduleList, setModuleList] = useState<any[]>([])

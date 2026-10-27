@@ -60,13 +60,6 @@ export const DEFAULT_GROUP = 'default' as const
 export const DEFAULT_IMAGE_SIZE = '1536x1536'
 export const DEFAULT_IMAGE_COUNT = 1
 
-// 视频模式联调开关：接口已通，走真实 /pg/videos 请求。
-// 需要本地脱机调试时改成 true，会跳过请求直接返回 MOCK_VIDEO_URL。
-export const MOCK_VIDEO_URL =
-  'https://ark-acg-cn-beijing.tos-cn-beijing.volces.com/doubao-seedance-2-0-fast/02179264138139000000000000000000000ffffac1742e87de1c6.mp4?X-Tos-Algorithm=TOS4-HMAC-SHA256&X-Tos-Credential=AKLTYWJkZTExNjA1ZDUyNDc3YzhjNTM5OGIyNjBhNDcyOTQ%2F20261022%2Fcn-beijing%2Ftos%2Frequest&X-Tos-Date=20261022T035743Z&X-Tos-Expires=86400&X-Tos-Signature=5d0d41adee2108c70e946ec4d7a5f72c31c346dcca2089fded91d21db9e1d146&X-Tos-SignedHeaders=host'
-// 模拟接口耗时，让「loading → 出视频」的过程可见
-export const MOCK_VIDEO_LATENCY_MS = 1200
-
 // 视频模式默认参数，对应参数面板默认选项：480p + 4s + 16:9
 export const DEFAULT_VIDEO_SIZE = '480p'
 export const DEFAULT_VIDEO_DURATION = 4

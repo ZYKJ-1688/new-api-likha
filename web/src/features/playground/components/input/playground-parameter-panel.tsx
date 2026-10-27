@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState } from 'react'
 import { SlidersHorizontalIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -39,7 +38,6 @@ import { Switch } from '@/components/ui/switch'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { cn } from '@/lib/utils'
 import {
-  DEFAULT_IMAGE_COUNT,
   DEFAULT_VIDEO_DURATION,
   DEFAULT_VIDEO_RATIO,
   DEFAULT_VIDEO_SIZE,
@@ -160,7 +158,6 @@ function PlaygroundParameterContent({
   const imageSelection = resolveImageSizeSelection(config.size)
   const selectedRatio = imageSelection.ratio
   const selectedRes = imageSelection.resolution
-  const [videoGenCount, setVideoGenCount] = useState(DEFAULT_IMAGE_COUNT)
   // 比例 / 分辨率 / 时长直接由 config 驱动，保证面板与请求入参一致
   const videoRatio = config.ratio ?? DEFAULT_VIDEO_RATIO
   const videoSize = config.videoSize ?? DEFAULT_VIDEO_SIZE

@@ -50,7 +50,6 @@ import type {
   ParameterEnabled,
 } from '../types'
 import { useStreamRequest } from './use-stream-request'
-import { ConsoleIcon } from '@hugeicons/core-free-icons'
 
 // 视频任务永远落在视频会话里，结果回填时显式指定 tab，
 // 避免用户在轮询期间切到别的tab导致结果写错会话

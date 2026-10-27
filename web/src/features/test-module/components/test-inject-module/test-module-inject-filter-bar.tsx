@@ -23,7 +23,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { Table } from '@tanstack/react-table'
-import { useTranslation } from 'react-i18next'
 import {
   LogsFilterField,
   TestFilterToolbar,

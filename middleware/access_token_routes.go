@@ -310,8 +310,31 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	// Root-only connectivity check, mirroring other test-connection routes.
 	"POST /api/file/test": accessTokenScopeRule("ops:write"),
 
+	// router/api-router.go: /api/question, /api/question_group, /api/test_task*
+	//
+	// 这几组用 AdminAuth 而不是 Casbin 的 RequirePermission，因此在路由注册时
+	// 不会走 DeclareAccessTokenPermissionRoute，必须在此显式声明。
+	// 口径：管理员操作一律要求浏览器 session，不接受编程 token（与 /pg/* 一致）。
+	// 不声明的话运行时会 fail-closed 返回 ACCESS_TOKEN_ROUTE_UNDECLARED，
+	// 行为虽然一样，但错误码不准确、且 TestAccessTokenRouteRulesCoverEveryDashboardRoute 会红。
+	"GET /api/question/":              accessTokenSessionRule,
+	"POST /api/question/":             accessTokenSessionRule,
+	"PUT /api/question/":              accessTokenSessionRule,
+	"DELETE /api/question/:id":        accessTokenSessionRule,
+	"GET /api/question_group/":        accessTokenSessionRule,
+	"POST /api/question_group/":       accessTokenSessionRule,
+	"PUT /api/question_group/":        accessTokenSessionRule,
+	"DELETE /api/question_group/:id":  accessTokenSessionRule,
+	"GET /api/test_task":              accessTokenSessionRule,
+	"POST /api/test_task":             accessTokenSessionRule,
+	"GET /api/test_task_detail":       accessTokenSessionRule,
+	"GET /api/test_task_detail/stats": accessTokenSessionRule,
+
 	// router/relay-router.go
-	"POST /pg/chat/completions": accessTokenSessionRule,
+	"POST /pg/chat/completions":   accessTokenSessionRule,
+	"POST /pg/images/generations": accessTokenSessionRule,
+	"POST /pg/videos":             accessTokenSessionRule,
+	"GET /pg/videos/:task_id":     accessTokenSessionRule,
 }
 
 var (

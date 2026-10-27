@@ -37,7 +37,7 @@ import {
 import { useMediaQuery } from '@/hooks'
 import { cn } from '@/lib/utils'
 
-interface TestFilterToolbarProps<TData> {
+interface TestFilterToolbarProps {
   primaryFilters: ReactNode
   advancedFilters?: ReactNode
   compactMobile?: boolean
@@ -76,7 +76,7 @@ export function LogsFilterField(props: LogsFilterFieldProps) {
   )
 }
 
-export function TestFilterToolbar<TData>(props: TestFilterToolbarProps<TData>) {
+export function TestFilterToolbar(props: TestFilterToolbarProps) {
   const { t } = useTranslation()
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
