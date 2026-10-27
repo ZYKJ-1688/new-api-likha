@@ -83,6 +83,15 @@ jobs:
           file: Dockerfile
           platforms: linux/amd64
           push: true
+          # ★ 关掉 buildx 默认的 provenance / sbom attestation。
+          # 不关的话，即使只构建单平台，tag 也会变成 OCI image index：
+          #   顶层 index digest（ArgoCD/Deployment 用的）
+          #     ├─ linux/amd64 manifest digest（ACR 控制台展开后显示的那个）
+          #     └─ unknown/unknown attestation（几十 KB）
+          # ⇒ 三处看到的 digest 永远"对不上"，排查极度费时（2026-10-27 踩过）。
+          # 需要供应链证明时再打开，并同步在运维文档里说明两层 digest 的区别。
+          provenance: false
+          sbom: false
           tags: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
