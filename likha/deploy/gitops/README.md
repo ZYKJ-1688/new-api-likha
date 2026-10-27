@@ -11,8 +11,8 @@
 ```
 push development
   → .github/workflows/dev-build.yml
-      ├─ 构建镜像 → 推 ACR   newapi-dev/newapi-likha:dev-<yyyymmdd>-<sha7>
-      └─ 回写 ops 仓         overlays/jkt-dev/kustomization.yaml 的 images.digest
+      ├─ 构建镜像 → 推 ACR   newapi-dev/newapi-master:dev-<yyyymmdd>-<sha7>
+      └─ 回写 ops 仓         overlays/jkt-dev/kustomization.yaml 的 images.newTag
   → ArgoCD（ACK 雅加达 dev 集群，Application `jkt-dev`）≤3 min 拉取
   → 滚动发布 newapi-dev 命名空间
   → 线上 /api/status 的 version = 本次 CI 的 tag
@@ -30,7 +30,7 @@ CI **不碰集群**（没有 kubeconfig），集群**不碰镜像构建**（没�
 | ArgoCD | v3.5.6，`argocd` ns，UI `https://argocd.likha.hk` |
 | Application | `jkt-dev` → `ZYKJ-1688/new-api-likha-ops` / `overlays/jkt-dev` |
 | 域名 | `dev.likha.hk`（复用，未新增） |
-| 镜像 | 马尼拉 ACR EE `newapi-dev/newapi-likha`（跨区公网拉取，SA 免密） |
+| 镜像 | 马尼拉 ACR EE `newapi-dev/newapi-master`（跨区公网拉取，SA 免密）。与测试仓 `new-api-yxw` **共用一个镜像仓库**（2026-10-27 裁定）；引用用**不可变 tag**，不用 digest |
 | Secret | `new-api-secrets` 手工注入，**不在 GitOps 范围** |
 | 同步策略 | `selfHeal=true` / `prune=false`（手工改集群 ≤3 min 被打回；孤儿资源暂不清理） |
 
