@@ -30,7 +30,7 @@ CI **不碰集群**（没有 kubeconfig），集群**不碰镜像构建**（没�
 | 域名 | `dev.likha.hk`（复用，未新增） |
 | 镜像 | 马尼拉 ACR EE `newapi-dev/newapi-likha`（跨区公网拉取，SA 免密） |
 | Secret | `new-api-secrets` 手工注入，**不在 GitOps 范围** |
-| 同步策略 | `selfHeal=false` / `prune=false`（保守档，见下方待办） |
+| 同步策略 | `selfHeal=true` / `prune=false`（2026-10-27 开启自愈：手工改集群会被 ≤3 min 打回） |
 
 > **与 `new-api-yxw` 的关系**：`new-api-yxw` 是个人测试仓，那套 GitOps 是原型。
 > 本仓接管同一个 ns 与同一批资源对象后，ArgoCD 的 `jkt-dev` 已把源切到本仓。
@@ -65,8 +65,8 @@ cd ../new-api-likha-ops && git revert <bump commit> && git push
 
 **红线**：
 
-1. 不要在集群里 `kubectl set image` 改 `new-api-dev*` —— `selfHeal` 打开后会被打回（现在还是 false，
-   但请按「Git 是真源」来操作）。
+1. 不要在集群里 `kubectl set image` 改 `new-api-dev*` —— `selfHeal` 已开启，≤3 min 会被打回。
+   手工止血请改 Git（revert commit），别再直接改集群。
 2. `Secret new-api-secrets` 不进 Git，轮换走运维脚本。
 3. `AlbConfig jkt-alb` / `IngressClass alb` **不在 ops 仓**：它们带 finalizer，被 ArgoCD prune
    会级联删除云上 ALB。
@@ -90,7 +90,6 @@ bash deploy/gitops/bootstrap/set-secrets.sh \
 
 ## 待办
 
-- [ ] `selfHeal → true`（现在手工改集群不会被拉回）
 - [ ] `prune → true`（开之前先 `argocd app diff` 逐条确认）
 - [ ] Trivy `exit-code → 1`（CRITICAL 阻断）
 - [ ] `OPS_REPO_TOKEN` 换成只对 ops 仓有 `Contents: write` 的细粒度 PAT
