@@ -1,0 +1,200 @@
+name: pre-build
+
+# 雅加达 pre（预发布）环境发布流水线（GitOps）
+#
+# 链路：push release/* → 构建镜像 → 推马尼拉 ACR(newapi-pre) → 回写 ops 仓（写不可变 tag）→ ArgoCD 收敛
+# 真源：new-api-likha-ops/overlays/jkt-pre/kustomization.yaml
+#
+# 与 dev-build.yml 的差异**只有环境参数**（ACR_NAMESPACE / OPS_ENV / SMOKE_URL / tag 前缀）。
+# 刻意保持同构：预发要验证的正是「同一条发布链路」，链路不同就失去了预发的意义。
+#
+# 四条红线（同 dev）：
+#   1. 绝不用 tag 触发（本仓 release.yml 监听 tags:'*'，打 tag 会启动三平台二进制构建）
+#   2. 绝不把 kubeconfig 放进 CI（CI 不认识集群，只改 Git）
+#   3. ops 回写失败必须让 job 红（否则「镜像推了但没部署」是最难查的静默失败）
+#   4. 镜像用「不可变 tag」引用（不是 digest，也不是 latest）：ACR 仓库已开 Immutable
+
+on:
+  push:
+    branches: ['release/*']
+    paths-ignore:
+      - '**/*.md'
+      - 'deploy/**'
+      - 'docs/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pre-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ACR_NAMESPACE: newapi-pre
+  ACR_REPO: newapi-master
+  OPS_REPO: ZYKJ-1688/new-api-likha-ops
+  OPS_ENV: jkt-pre
+  SMOKE_URL: https://pre.likha.hk/api/status
+
+jobs:
+  build-push:
+    name: Build & push image
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      digest: ${{ steps.push.outputs.digest }}
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: Compute tag
+        id: meta
+        # tag 格式：pre-YYYYMMDD-HHMMSS-<sha7>
+        # ★ 精确到秒的理由同 dev-build：ACR tag 不可变，天上粒度的 tag 会撞同名。
+        # ★ 时区显式钉 Asia/Shanghai，保证与 dev 的 tag 在同一时间轴上可比较。
+        run: |
+          TAG="pre-$(TZ='Asia/Shanghai' date +%Y%m%d-%H%M%S)-$(git rev-parse --short=7 HEAD)"
+          IMAGE="${{ secrets.ACR_REGISTRY }}/${ACR_NAMESPACE}/${ACR_REPO}"
+          echo "tag=$TAG"     >> "$GITHUB_OUTPUT"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "TAG=$TAG"     >> "$GITHUB_ENV"
+          echo "### 本次构建（pre）" >> "$GITHUB_STEP_SUMMARY"
+          echo "- tag: \`$TAG\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- repo: \`$IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stamp VERSION（镜像内版本号，供 /api/status 反查）
+        # 上游 Dockerfile 从 ./VERSION 读版本（COPY ./VERSION /build/VERSION + go build -ldflags）。
+        # 不注入就永远查不到线上跑的是哪个 commit。
+        run: echo "$TAG" > VERSION
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Login ACR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ secrets.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build & push
+        id: push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          # ★ 关掉 buildx 默认的 provenance / sbom attestation。
+          # 不关的话 tag 会变成 OCI image index，顶层 index digest 与 amd64 manifest digest
+          # 对不上，排查极度费时（2026-10-27 dev 踩过）。需要供应链证明时再开。
+          provenance: false
+          sbom: false
+          tags: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.tag }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          # 与 dev 分开的 cache scope，避免两个环境互相污染构建缓存
+          cache-from: type=gha,scope=prebuild
+          cache-to: type=gha,mode=max,scope=prebuild
+
+      - name: Trivy scan (report only)
+        # ⚠️ 暂不阻断：基础镜像的历史漏洞还没清完，现在改 exit-code 1 会让 pre 常年红。
+        #    清理完成后按「预发/正式一视同仁」的要求，把 pre 与 prod 一起改成 exit-code 1。
+        # ⚠️ tag 必须带 `v` 前缀且 pin 到 commit SHA：写 `@0.28.0`（无 v）会让整个 job
+        #    在 "Set up job" 阶段就 `Unable to resolve action` 失败（2026-10-27 实测）。
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.meta.outputs.image }}@${{ steps.push.outputs.digest }}
+          format: table
+          severity: CRITICAL
+          exit-code: "0"
+
+      - name: Summary
+        run: |
+          echo "- digest: \`${{ steps.push.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- 推送完成，下一步回写 ops 仓（jkt-pre）" >> "$GITHUB_STEP_SUMMARY"
+
+  bump-ops:
+    name: Bump ops repo (jkt-pre)
+    needs: build-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Clone ops repo
+        env:
+          OPS_REPO_TOKEN: ${{ secrets.OPS_REPO_TOKEN }}
+        run: |
+          git clone --depth 1 "https://x-access-token:${OPS_REPO_TOKEN}@github.com/${OPS_REPO}.git" ops
+
+      - name: Set image tag
+        working-directory: ops
+        env:
+          # ⚠️ 不要用 needs.build-push.outputs.image：实测传过来是空串，
+          #    导致 newName 被写空、镜像退化成 docker.io/library/<name>@sha256:…
+          #    然后 ImagePullBackOff。这里直接重拼，只依赖 secrets + job env。
+          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          TAG: ${{ needs.build-push.outputs.tag }}
+          DIGEST: ${{ needs.build-push.outputs.digest }}
+        run: |
+          IMAGE="${ACR_REGISTRY}/${ACR_NAMESPACE}/${ACR_REPO}"
+          case "$IMAGE" in
+            *aliyuncs.com/*) : ;;
+            *) echo "::error::ACR_REGISTRY 拼接异常，拒绝写入: '$IMAGE'"; exit 1 ;;
+          esac
+          echo "target image = ${IMAGE}:${TAG}"
+          echo "  digest=${DIGEST}（仅记录，不写入清单）"
+          # 写不可变 tag。ACR 仓库已开「不可变」：同名 tag 不可覆盖、不可删除 ⇒
+          # tag 等价于稳定引用，回滚语义与 digest 一致，而可读性远好于 64 位 digest。
+          # ★ 前提：ACR 的「不可变」必须保持开启。
+          bash scripts/set-image.sh "$OPS_ENV" "${IMAGE}:${TAG}"
+          git diff --stat
+
+      - name: Commit & push
+        working-directory: ops
+        env:
+          OPS_REPO_TOKEN: ${{ secrets.OPS_REPO_TOKEN }}
+          TAG: ${{ needs.build-push.outputs.tag }}
+          DIGEST: ${{ needs.build-push.outputs.digest }}
+        run: |
+          git config user.name  "gitops-bot"
+          git config user.email "gitops-bot@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "manifest 无变化，跳过提交"
+            exit 0
+          fi
+          git commit -m "chore(${OPS_ENV}): ${TAG} (src=${GITHUB_SHA:0:7})"
+          # 禁止 force push：被并发发布抢先就 rebase 后重推
+          git pull --rebase --autostash origin main || true
+          git push origin HEAD:main
+
+  smoke:
+    name: Smoke (non-blocking)
+    needs: [build-push, bump-ops]
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    continue-on-error: true
+    steps:
+      - name: Wait for ArgoCD rollout then check version
+        env:
+          TAG: ${{ needs.build-push.outputs.tag }}
+        run: |
+          for i in $(seq 1 14); do
+            code=$(curl -s -o /tmp/status.json -w '%{http_code}' -m 10 "$SMOKE_URL" || true)
+            if [ "$code" = "200" ]; then
+              if grep -q "$TAG" /tmp/status.json; then
+                echo "✓ 已看到新版本 $TAG"
+                exit 0
+              fi
+            fi
+            sleep 20
+          done
+          echo "::warning::4.5 分钟内未在 /api/status 看到 $TAG（ArgoCD 轮询 3min + 滚动 30s，可再等等）"
