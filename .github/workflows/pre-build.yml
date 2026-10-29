@@ -1,6 +1,6 @@
 name: pre-build
 
-# 雅加达 pre（预发布）环境发布流水线（GitOps）
+# 雅加达 new-api-pre（预发布）环境发布流水线（GitOps）  
 #
 # 链路：push release/* → 构建镜像 → 推马尼拉 ACR(newapi-pre) → 回写 ops 仓（写不可变 tag）→ ArgoCD 收敛
 # 真源：new-api-likha-ops/overlays/jkt-pre/kustomization.yaml
