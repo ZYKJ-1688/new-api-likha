@@ -807,7 +807,7 @@ export function buildSubmitRequest(ctx) {
   const resolution = videoResolution(ctx);
   const body = Object.assign({ model: req.model || "", content: [] }, metadata);
   if (req.resolution != null || metadata.resolution != null) body.resolution = resolution;
-  const ratio = req.ratio != null ? req.ratio : metadata.ratio;
+  const ratio = req.ratio != null ? req.ratio : req.aspect_ratio != null ? req.aspect_ratio : metadata.ratio;
   if (ratio != null) {
     if (typeof ratio !== "string" || !ratio.trim()) throw new Error("ratio must be a non-empty string");
     body.ratio = ratio.trim();
@@ -1152,6 +1152,14 @@ const legacyRenderers = {
       completed_at: task.updated_at,
     };
     if (data.status === "failed") output.error = { message: data.error ? data.error.message || "" : "", code: data.error ? data.error.code || "" : "" };
+    // Compatible clients (for example Seedance-compatible /v1/videos callers)
+    // read the finished media URL from the poll response instead of downloading
+    // /v1/videos/{id}/content. The host keeps these provider fields.
+    const videoURL = trimmed((artifactData(task).content || {}).video_url);
+    if (videoURL) {
+      output.url = videoURL;
+      output.video_url = videoURL;
+    }
     return output;
   },
 };

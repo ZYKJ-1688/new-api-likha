@@ -1050,3 +1050,71 @@ func TestDoubaoImageEndpointMappingKeepsDeclaredModel(t *testing.T) {
 		})
 	}
 }
+
+// Seedance 兼容协议（例如 BeefTV 的 Seedance Compatible /videos）只从轮询响应里
+// 取视频地址，不下载 /v1/videos/{id}/content；渲染必须带出上游已完成的视频地址。
+func TestDoubaoOpenAIVideoRenderExposesFinishedVideoURL(t *testing.T) {
+	_, plugin := newDoubaoPlugin(t)
+	const model = "doubao-seedance-2-0-fast-260128"
+	render := func(t *testing.T, task map[string]any) map[string]any {
+		t.Helper()
+		value, err := plugin.Engine.CallPath(t.Context(), "protocols", []string{"openai_video", "render"}, map[string]any{}, task)
+		require.NoError(t, err)
+		return alibabaObject(t, value)
+	}
+
+	completed := render(t, map[string]any{
+		"task_id": "task_public", "status": "SUCCESS", "progress": "100%", "created_at": 10, "updated_at": 20,
+		"properties": map[string]any{"origin_model_name": model},
+		"data": map[string]any{
+			"id":      "cgt-1",
+			"status":  "succeeded",
+			"content": map[string]any{"video_url": "https://cdn.example/video.mp4"},
+		},
+	})
+	assert.Equal(t, "completed", completed["status"])
+	assert.Equal(t, "https://cdn.example/video.mp4", completed["url"])
+	assert.Equal(t, "https://cdn.example/video.mp4", completed["video_url"])
+
+	running := render(t, map[string]any{
+		"task_id": "task_public", "status": "IN_PROGRESS", "progress": "50%", "created_at": 10, "updated_at": 20,
+		"properties": map[string]any{"origin_model_name": model},
+		"data":       map[string]any{"id": "cgt-1", "status": "running"},
+	})
+	assert.Equal(t, "in_progress", running["status"])
+	assert.NotContains(t, running, "url")
+	assert.NotContains(t, running, "video_url")
+}
+
+// Seedance 兼容客户端的画幅字段是 aspect_ratio，Ark 的原生字段是 ratio；
+// 转成上游请求时必须透传，否则端口/画幅会被静默丢弃。
+func TestDoubaoOpenAIVideoMapsAspectRatio(t *testing.T) {
+	_, plugin := newDoubaoPlugin(t)
+	const model = "doubao-seedance-2-0-fast-260128"
+	value, err := plugin.Engine.CallPath(t.Context(), "protocols", []string{"openai_video", "decodeRequest"}, map[string]any{
+		"model": model, "upstreamModel": model,
+		"body": map[string]any{"kind": "json", "value": map[string]any{
+			"model": model, "prompt": "a running cat", "seconds": 5, "aspect_ratio": "9:16",
+		}},
+	})
+	require.NoError(t, err)
+	request := alibabaObject(t, value)["requestBody"].(map[string]any)
+
+	info := &relaycommon.RelayInfo{
+		ChannelMeta:     &relaycommon.ChannelMeta{ChannelBaseUrl: doubaoBaseURL, UpstreamModelName: model},
+		OriginModelName: model,
+		TaskRelayInfo:   &relaycommon.TaskRelayInfo{PublicTaskID: "task_public", Action: "text_to_video"},
+	}
+	adaptor := taskplugin.New(plugin)
+	adaptor.Init(info)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", nil)
+	c.Set("task_request", request)
+	require.Nil(t, adaptor.ValidateRequestAndSetAction(c, info))
+	reader, err := adaptor.BuildRequestBody(c, info)
+	require.NoError(t, err)
+	var body map[string]any
+	require.NoError(t, common.DecodeJson(reader, &body))
+	assert.Equal(t, "9:16", body["ratio"])
+	assert.Equal(t, float64(5), body["duration"])
+}
