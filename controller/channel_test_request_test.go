@@ -6,7 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/relay/channel/ali"
 	"github.com/QuantumNous/new-api/relay/channel/openai"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -91,7 +91,7 @@ func TestChannelTestOpenAIChatCompatibility(t *testing.T) {
 		{name: "o series", model: "o3-mini", upstream: "o3-mini", channelType: constant.ChannelTypeAzure, wantLimit: "max_completion_tokens"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			request, ok := buildTestRequest(tt.model, tt.endpoint, &model.Channel{}, tt.stream).(*dto.GeneralOpenAIRequest)
+			request, ok := buildTestRequest(tt.model, tt.endpoint, "/v1/chat/completions", tt.stream).(*dto.GeneralOpenAIRequest)
 			require.True(t, ok)
 			encoded := convertChatCompatibilityRequest(t, request, tt.channelType, map[string]string{tt.model: tt.upstream})
 			want := map[string]any{
@@ -237,4 +237,36 @@ func TestDirectOpenAIResponsesKeepsExistingParameters(t *testing.T) {
 	encoded, err := common.Marshal(converted)
 	require.NoError(t, err)
 	assert.JSONEq(t, body, string(encoded))
+}
+
+// 自动检测把 seedream 之类的图像模型判定到 /v1/images/generations 时，请求体必须
+// 是 ImageRequest，否则按 RelayModeImagesGenerations 转换会报 invalid image request type。
+func TestChannelTestAutomaticImageEndpointBuildsImageRequest(t *testing.T) {
+	request, ok := buildTestRequest("doubao-seedream-5-0-pro-260628", "", "/v1/images/generations", false).(*dto.ImageRequest)
+	require.True(t, ok)
+	assert.Equal(t, "doubao-seedream-5-0-pro-260628", request.Model)
+	assert.Equal(t, "a cute cat", request.Prompt)
+
+	encoded, err := common.Marshal(request)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"model":"doubao-seedream-5-0-pro-260628","prompt":"a cute cat"}`, string(encoded))
+}
+
+func TestChannelTestDetectsTaskPluginVideoModels(t *testing.T) {
+	const source = `
+export const meta = {apiVersion: 1, key: "channel-test-video", name: "Video", version: "1.0.0", author: {name: "Test"}, models: ["channel-test-video-model"], fetchMode: "per_task", protocols: ["openai_video"]};
+export const protocols = {openai_video: {decodeRequest: function (ctx) { return {kind: "submit", model: ctx.model, requestBody: {}}; }, render: function () { return {}; }}};
+export function buildSubmitRequest() { return {}; }
+export function parseSubmitResponse() { return {}; }
+export function buildQueryRequest() { return {}; }
+export function parseTaskResult() { return {}; }
+export function listArtifacts() { return []; }
+export function buildContentRequest() { throw new Error("artifact_not_found"); }
+`
+	_, err := jsplugin.DefaultRegistry.Register(source, jsplugin.Options{})
+	require.NoError(t, err)
+	t.Cleanup(func() { jsplugin.DefaultRegistry.Unregister("channel-test-video") })
+
+	assert.True(t, isTaskPluginVideoModel("channel-test-video-model"))
+	assert.False(t, isTaskPluginVideoModel("gpt-4o-mini"))
 }
