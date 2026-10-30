@@ -1521,6 +1521,9 @@ func (a *TaskAdaptor) validateResolvedUsageValue(value any, usageSchema map[stri
 	switch typed := value.(type) {
 	case map[string]any:
 		for key, item := range typed {
+			if a.requestAutoDuration(usageSchema, key, item) {
+				continue
+			}
 			if schema, declared := usageSchema[key]; declared {
 				if _, err := validateUsageValue(item, schema, true); err != nil {
 					return err
@@ -1679,6 +1682,26 @@ func validateUsageValue(value any, schema pluginruntime.UsageFieldSchema, allowN
 		return 0, err
 	}
 	return number, nil
+}
+
+// requestAutoDuration reports whether a request field carries the vendor's -1
+// auto-duration sentinel. Only a plugin that declares duration-auto@1 may send
+// it, and only where the field names a duration.
+func (a *TaskAdaptor) requestAutoDuration(usageSchema map[string]pluginruntime.UsageFieldSchema, key string, value any) bool {
+	if !slices.Contains(a.plugin.Meta.RequiredCapabilities, pluginruntime.CapabilityDurationAuto) {
+		return false
+	}
+	durationLike := false
+	if schema, declared := usageSchema[key]; declared {
+		durationLike = schema.Unit == "second"
+	} else if limit, canonical := canonicalUsageLimit(key); canonical {
+		durationLike = limit == relaycommon.MaxTaskDurationSeconds
+	}
+	if !durationLike {
+		return false
+	}
+	number, ok := usageNumber(value, true)
+	return ok && number == -1
 }
 
 func validateUsageLimit(value any, limit int, allowNumericString bool) error {

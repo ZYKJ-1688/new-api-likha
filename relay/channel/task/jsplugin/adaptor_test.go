@@ -2254,3 +2254,55 @@ func TestTaskAdaptorChainsSunoBatchFetchThroughNewAPIUpstream(t *testing.T) {
 	assert.Equal(t, "SUCCESS", results["task_up_public"].TaskInfo.Status)
 	assert.Equal(t, []string{"POST /suno/submit/MUSIC", "POST /suno/fetch"}, seen)
 }
+
+// duration-auto@1 relaxes only the vendor's -1 sentinel for duration-like
+// request fields; every other bound still applies.
+func TestTaskAdaptorAcceptsAutoDurationOnlyWithCapability(t *testing.T) {
+	source := func(capabilities string) string {
+		return `
+export const meta = {
+  apiVersion: 1, key: "auto-duration", name: "Auto Duration", version: "1.0.0",
+  author: {name: "Test"},
+  models: ["model"], fetchMode: "per_task", ` + capabilities + `
+  usageSchema: {duration: {type: "number", unit: "second"}},
+  usageExamples: [{label: "1s", facts: {duration: 1}}],
+};
+export function buildSubmitRequest(ctx) { return {url: ctx.baseUrl + "/submit", method: "POST", body: {}}; }
+export function parseSubmitResponse() { return {taskId: "1"}; }
+export function buildQueryRequest() { return {url: "https://example.com"}; }
+export function parseTaskResult() { return {status: "SUCCESS"}; }
+`
+	}
+	for _, testCase := range []struct {
+		name         string
+		capabilities string
+		body         map[string]any
+		wantErr      bool
+	}{
+		{"auto duration with capability", `requiredCapabilities: ["duration-auto@1"],`, map[string]any{"duration": -1}, false},
+		{"auto duration as a numeric string", `requiredCapabilities: ["duration-auto@1"],`, map[string]any{"metadata": map[string]any{"duration": "-1"}}, false},
+		{"other negative durations stay rejected", `requiredCapabilities: ["duration-auto@1"],`, map[string]any{"duration": -2}, true},
+		{"auto duration without the capability", ``, map[string]any{"duration": -1}, true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			plugin, err := pluginruntime.NewRegistry().Register(source(testCase.capabilities), pluginruntime.Options{})
+			require.NoError(t, err)
+			adaptor := New(plugin)
+			info := &relaycommon.RelayInfo{
+				ChannelMeta:   &relaycommon.ChannelMeta{ChannelBaseUrl: "https://provider.example"},
+				TaskRelayInfo: &relaycommon.TaskRelayInfo{},
+			}
+			adaptor.Init(info)
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/native/submit", nil)
+			c.Set("task_request", testCase.body)
+			taskErr := adaptor.ValidateRequestAndSetAction(c, info)
+			if !testCase.wantErr {
+				require.Nil(t, taskErr)
+				return
+			}
+			require.NotNil(t, taskErr)
+			assert.Equal(t, "plugin_usage_invalid", taskErr.Code)
+		})
+	}
+}
