@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	builtinplugins "github.com/QuantumNous/new-api/plugins"
@@ -1049,4 +1050,159 @@ func TestDoubaoImageEndpointMappingKeepsDeclaredModel(t *testing.T) {
 			assert.Equal(t, map[string]any{"images_up_to_1_5k": float64(0), "images_above_1_5k": float64(1), "input_images": float64(0), "layer_decomposition": false}, alibabaObject(t, facts))
 		})
 	}
+}
+
+// Seedance 兼容协议（例如 BeefTV 的 Seedance Compatible /videos）只从轮询响应里
+// 取视频地址，不下载 /v1/videos/{id}/content；渲染必须带出上游已完成的视频地址。
+func TestDoubaoOpenAIVideoRenderExposesFinishedVideoURL(t *testing.T) {
+	_, plugin := newDoubaoPlugin(t)
+	const model = "doubao-seedance-2-0-fast-260128"
+	render := func(t *testing.T, task map[string]any) map[string]any {
+		t.Helper()
+		value, err := plugin.Engine.CallPath(t.Context(), "protocols", []string{"openai_video", "render"}, map[string]any{}, task)
+		require.NoError(t, err)
+		return alibabaObject(t, value)
+	}
+
+	completed := render(t, map[string]any{
+		"task_id": "task_public", "status": "SUCCESS", "progress": "100%", "created_at": 10, "updated_at": 20,
+		"properties": map[string]any{"origin_model_name": model},
+		"data": map[string]any{
+			"id":      "cgt-1",
+			"status":  "succeeded",
+			"content": map[string]any{"video_url": "https://cdn.example/video.mp4"},
+		},
+	})
+	assert.Equal(t, "completed", completed["status"])
+	assert.Equal(t, "https://cdn.example/video.mp4", completed["url"])
+	assert.Equal(t, "https://cdn.example/video.mp4", completed["video_url"])
+
+	running := render(t, map[string]any{
+		"task_id": "task_public", "status": "IN_PROGRESS", "progress": "50%", "created_at": 10, "updated_at": 20,
+		"properties": map[string]any{"origin_model_name": model},
+		"data":       map[string]any{"id": "cgt-1", "status": "running"},
+	})
+	assert.Equal(t, "in_progress", running["status"])
+	assert.NotContains(t, running, "url")
+	assert.NotContains(t, running, "video_url")
+}
+
+// Seedance 兼容客户端的画幅字段是 aspect_ratio，Ark 的原生字段是 ratio；
+// 转成上游请求时必须透传，否则端口/画幅会被静默丢弃。
+func TestDoubaoOpenAIVideoMapsAspectRatio(t *testing.T) {
+	_, plugin := newDoubaoPlugin(t)
+	const model = "doubao-seedance-2-0-fast-260128"
+	value, err := plugin.Engine.CallPath(t.Context(), "protocols", []string{"openai_video", "decodeRequest"}, map[string]any{
+		"model": model, "upstreamModel": model,
+		"body": map[string]any{"kind": "json", "value": map[string]any{
+			"model": model, "prompt": "a running cat", "seconds": 5, "aspect_ratio": "9:16",
+		}},
+	})
+	require.NoError(t, err)
+	request := alibabaObject(t, value)["requestBody"].(map[string]any)
+
+	info := &relaycommon.RelayInfo{
+		ChannelMeta:     &relaycommon.ChannelMeta{ChannelBaseUrl: doubaoBaseURL, UpstreamModelName: model},
+		OriginModelName: model,
+		TaskRelayInfo:   &relaycommon.TaskRelayInfo{PublicTaskID: "task_public", Action: "text_to_video"},
+	}
+	adaptor := taskplugin.New(plugin)
+	adaptor.Init(info)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", nil)
+	c.Set("task_request", request)
+	require.Nil(t, adaptor.ValidateRequestAndSetAction(c, info))
+	reader, err := adaptor.BuildRequestBody(c, info)
+	require.NoError(t, err)
+	var body map[string]any
+	require.NoError(t, common.DecodeJson(reader, &body))
+	assert.Equal(t, "9:16", body["ratio"])
+	assert.Equal(t, float64(5), body["duration"])
+}
+
+// duration -1 lets Seedance pick the length; an omitted duration behaves the
+// same. Both must reserve the model's longest duration, not a fixed 15s.
+func TestDoubaoAutoDuration(t *testing.T) {
+	_, plugin := newDoubaoPlugin(t)
+	const model = "doubao-seedance-1-5-pro-251215"
+	decode := func(t *testing.T, value map[string]any) (map[string]any, error) {
+		t.Helper()
+		decoded, err := plugin.Engine.CallPath(t.Context(), "protocols", []string{"openai_video", "decodeRequest"}, map[string]any{
+			"model": model, "upstreamModel": model,
+			"body": map[string]any{"kind": "json", "value": value},
+		})
+		if err != nil {
+			return nil, err
+		}
+		return alibabaObject(t, decoded)["requestBody"].(map[string]any), nil
+	}
+	submit := func(t *testing.T, request map[string]any) (map[string]any, map[string]any) {
+		t.Helper()
+		info := &relaycommon.RelayInfo{
+			ChannelMeta:     &relaycommon.ChannelMeta{ChannelBaseUrl: doubaoBaseURL, UpstreamModelName: model},
+			OriginModelName: model,
+			TaskRelayInfo:   &relaycommon.TaskRelayInfo{PublicTaskID: "task_public", Action: "text_to_video"},
+		}
+		adaptor := taskplugin.New(plugin)
+		adaptor.Init(info)
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", nil)
+		c.Set("task_request", request)
+		require.Nil(t, adaptor.ValidateRequestAndSetAction(c, info))
+		reader, err := adaptor.BuildRequestBody(c, info)
+		require.NoError(t, err)
+		var body map[string]any
+		require.NoError(t, common.DecodeJson(reader, &body))
+		facts, err := adaptor.ExtractUsageFactsValidated(c, info)
+		require.NoError(t, err)
+		return body, alibabaObject(t, facts)
+	}
+
+	// 12s x 1920x1080 x 24 / 1024 is the longest 1080p reservation of this model.
+	const longestTokens = float64(583200)
+
+	request, err := decode(t, map[string]any{"model": model, "prompt": "a cat", "duration": -1})
+	require.NoError(t, err)
+	body, facts := submit(t, request)
+	assert.Equal(t, float64(-1), body["duration"])
+	assert.Equal(t, longestTokens, facts["tokens"])
+
+	request, err = decode(t, map[string]any{"model": model, "prompt": "a cat"})
+	require.NoError(t, err)
+	body, facts = submit(t, request)
+	assert.NotContains(t, body, "duration")
+	assert.Equal(t, longestTokens, facts["tokens"])
+
+	_, err = decode(t, map[string]any{"model": model, "prompt": "a cat", "seconds": 0})
+	require.ErrorContains(t, err, "seconds must be -1 or between 1 and 3600")
+}
+
+// GET /v1/videos/{id} 由宿主调用插件的 openai_video 渲染。已完成的 doubao 任务必须
+// 带出视频地址，否则 Seedance 兼容客户端会认为“任务完成但没有结果”。
+// 这条断言走宿主的真实渲染路径，插件被升级或回退时能第一时间发现字段丢失。
+func TestDoubaoOpenAIVideoHostRenderCarriesFinishedVideoURL(t *testing.T) {
+	_, plugin := newDoubaoPlugin(t)
+	const modelName = "doubao-seedance-2-0-fast-260128"
+	task := &model.Task{
+		TaskID:     "task_public",
+		Status:     model.TaskStatusSuccess,
+		Progress:   "100%",
+		CreatedAt:  10,
+		UpdatedAt:  20,
+		FinishTime: 20,
+		Properties: model.Properties{OriginModelName: modelName, UpstreamModelName: modelName},
+	}
+	task.SetData(map[string]any{
+		"id":      "cgt-1",
+		"status":  "succeeded",
+		"content": map[string]any{"video_url": "https://cdn.example/video.mp4"},
+	})
+
+	rendered, err := taskplugin.New(plugin).ConvertToOpenAIVideo(task)
+	require.NoError(t, err)
+	var video map[string]any
+	require.NoError(t, common.Unmarshal(rendered, &video))
+	assert.Equal(t, "completed", video["status"])
+	assert.Equal(t, "https://cdn.example/video.mp4", video["url"])
+	assert.Equal(t, "https://cdn.example/video.mp4", video["video_url"])
 }

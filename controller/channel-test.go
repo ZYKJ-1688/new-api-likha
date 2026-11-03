@@ -19,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
+	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/relay"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -119,6 +120,14 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		}
 	} else {
 		// 如果没有指定端点类型，使用原有的自动检测逻辑
+
+		// 视频生成模型由任务插件在 /v1/videos 承接异步任务，没有同步探测接口；
+		// 用对话接口测试只会拿到上游的 500 InternalServiceError。
+		if isTaskPluginVideoModel(testModel) {
+			return testResult{
+				localErr: fmt.Errorf("%s 是视频生成模型，渠道测试只探测同步接口，请通过 /v1/videos 提交任务验证", testModel),
+			}
+		}
 
 		if strings.Contains(strings.ToLower(testModel), "rerank") {
 			requestPath = "/v1/rerank"
@@ -227,7 +236,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		}
 	}
 
-	request := buildTestRequest(testModel, endpointType, channel, isStream)
+	request := buildTestRequest(testModel, endpointType, requestPath, isStream)
 
 	info, err := relaycommon.GenRelayInfo(c, relayFormat, request, nil)
 
@@ -669,6 +678,13 @@ func shouldUseStreamForAutomaticChannelTest(channel *model.Channel) bool {
 	return channel != nil && channel.Type == constant.ChannelTypeCodex
 }
 
+// isTaskPluginVideoModel 判断模型是否只由任务插件在 OpenAI 视频接口上提供。
+// 这类模型没有同步请求路径，渠道测试无法用一次请求完成探测。
+func isTaskPluginVideoModel(model string) bool {
+	_, ok := pluginruntime.DefaultRegistry.Generation().LookupEndpoint(http.MethodPost, "/v1/videos", model)
+	return ok
+}
+
 func detectErrorMessageFromJSONBytes(jsonBytes []byte) string {
 	if len(jsonBytes) == 0 {
 		return ""
@@ -698,7 +714,7 @@ func detectErrorMessageFromJSONBytes(jsonBytes []byte) string {
 	return message
 }
 
-func buildTestRequest(model string, endpointType string, channel *model.Channel, isStream bool) dto.Request {
+func buildTestRequest(model string, endpointType string, requestPath string, isStream bool) dto.Request {
 	testResponsesInput := json.RawMessage(`[{"role":"user","content":"hi"}]`)
 
 	// 根据端点类型构建不同的测试请求
@@ -783,6 +799,15 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 	}
 
 	// 自动检测逻辑（保持原有行为）
+	// 自动检测把模型判定为图像生成（路径为 /v1/images/generations）时，请求体必须
+	// 同步换成 ImageRequest，否则转换阶段会因 RelayMode 不匹配而失败。
+	if requestPath == "/v1/images/generations" {
+		return &dto.ImageRequest{
+			Model:  model,
+			Prompt: "a cute cat",
+		}
+	}
+
 	if strings.Contains(strings.ToLower(model), "rerank") {
 		return &dto.RerankRequest{
 			Model:     model,
