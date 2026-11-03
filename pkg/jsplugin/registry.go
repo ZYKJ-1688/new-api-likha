@@ -218,6 +218,15 @@ type LoadedPlugin struct {
 	Engine *Engine
 }
 
+// UsesSubmitEventDelta reports whether SSE submissions go through
+// parseSubmitEventDelta: the plugin declares submit-sse-delta@1, or exports
+// parseSubmitEventDelta without parseSubmitEvent. A plugin that exports both
+// and declares nothing keeps the snapshot hook, as before.
+func UsesSubmitEventDelta(meta Meta, engine *Engine) bool {
+	return slices.Contains(meta.RequiredCapabilities, CapabilitySubmitSSEDelta) ||
+		engine.HasExport("parseSubmitEventDelta") && !engine.HasExport("parseSubmitEvent")
+}
+
 // RegistrySnapshot is a read-only copy of the metadata currently stored in
 // each registry layer.
 type RegistrySnapshot struct {
@@ -341,7 +350,7 @@ func CompilePlugin(source string, options Options) (*LoadedPlugin, error) {
 	engine.version = meta.Version
 	requiredHooks := []string{"buildSubmitRequest", "parseSubmitResponse", "parseTaskResult"}
 	if slices.Contains(meta.SubmitResponseTypes, "sse") {
-		if slices.Contains(meta.RequiredCapabilities, CapabilitySubmitSSEDelta) {
+		if UsesSubmitEventDelta(meta, engine) {
 			requiredHooks = append(requiredHooks, "parseSubmitEventDelta")
 		} else {
 			requiredHooks = append(requiredHooks, "parseSubmitEvent")
@@ -728,6 +737,12 @@ func (r *Registry) prepareGeneration(
 	}
 	if err != nil {
 		return nil, nil, err
+	}
+	// The preparer decides admission by whether a key is built in, which the
+	// filtered factory passed here no longer tells for a switched-off key.
+	generation.factoryKeys = pluginMapKeys(r.factory)
+	for key := range factory {
+		generation.factoryKeys[key] = struct{}{}
 	}
 	if r.preparer != nil {
 		prepared, prepareErr := r.preparer(generation, current)
@@ -1287,6 +1302,14 @@ func normalizeV1Meta(meta *Meta) error {
 	}
 	if !ValidPluginKey(meta.Key) {
 		return fmt.Errorf("plugin meta key must match %s", pluginKeyPattern)
+	}
+	// The host serves the plugin's routes under /{key}, so the key must not
+	// name a host namespace.
+	if meta.Key == "api" || slices.ContainsFunc(reservedRouteNamespaces, func(namespace string) bool {
+		first, _, _ := strings.Cut(strings.TrimPrefix(namespace, "/"), "/")
+		return first == meta.Key
+	}) {
+		return fmt.Errorf("plugin meta key %q is a reserved path segment", meta.Key)
 	}
 	if !pluginVersionPattern.MatchString(meta.Version) {
 		return fmt.Errorf("plugin meta version must be semver")

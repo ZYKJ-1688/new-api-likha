@@ -79,6 +79,7 @@ import {
 import { modelsQueryKeys, vendorsQueryKeys } from '../../lib'
 import {
   modelFormSchema,
+  MODEL_FORM_DEFAULT_VALUES,
   transformModelToFormDefaults,
   transformFormDataToModelPayload,
   type ModelFormValues,
@@ -168,6 +169,7 @@ export function ModelMutateDrawer(props: {
 
   useEffect(() => {
     if (!props.open) {
+      form.reset(MODEL_FORM_DEFAULT_VALUES)
       setCreatedModel(null)
       loadedKey.current = ''
       return
@@ -445,7 +447,7 @@ export function ModelMutateDrawer(props: {
                                 }))}
                                 onValueChange={(value) =>
                                   field.onChange(
-                                    value ? Number.parseInt(value) : undefined
+                                    value ? Number.parseInt(value) : 0
                                   )
                                 }
                                 value={field.value ? String(field.value) : null}
