@@ -826,20 +826,12 @@ type releasedAuditLog struct {
 
 func (releasedAuditLog) TableName() string { return "logs" }
 
-// auditTestSQLiteDSNParams 必须与生产默认 DSN（common.SQLitePath）的并发参数一致。
-// 少了 busy_timeout 时，并发写会立刻返回 SQLITE_BUSY（database is locked）而不是排队等待，
-// 像 TestSecurityAccountDeletionConcurrentRequestsHaveOneWinner 这种「并发只能有一个赢家」
-// 的用例就会偶发失败（2026-11-03 CI 实测：两条 DELETE 都失败，succeeded 由 1 变成 0）。
-// WAL 让读不被写阻塞；_txlock=immediate 让写事务在 BEGIN 时即取写锁，
-// 从而通过 busy_timeout 串行排队，而不是在提交阶段撞锁。
-const auditTestSQLiteDSNParams = "?_pragma=busy_timeout(30000)&_pragma=journal_mode(WAL)&_txlock=immediate"
-
 // External tests create a new database per case on a loopback-only disposable
 // instance. They never drop databases or tables supplied through an environment variable.
 func newAuditTestDatabase(t *testing.T, kind, dsn string) (*gorm.DB, string) {
 	t.Helper()
 	if kind == "sqlite" {
-		path := t.TempDir() + "/audit.db" + auditTestSQLiteDSNParams
+		path := t.TempDir() + "/audit.db"
 		db, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
 		require.NoError(t, err)
 		return db, path
