@@ -100,3 +100,8 @@ export function tryPrettyJson(text: string): string {
     return raw
   }
 }
+
+export function isDev(): boolean {
+  // Rsbuild内置MODE，不需要自己在env文件写VITE_ENV
+  return import.meta.env.MODE === 'development'
+}

@@ -18,8 +18,18 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { t } from 'i18next'
 
-import { ERROR_MESSAGES, MESSAGE_ROLES, MESSAGE_STATUS } from '../../constants'
-import type { ChatCompletionResponse, Message } from '../../types'
+import {
+  ERROR_MESSAGES,
+  MESSAGE_ROLES,
+  MESSAGE_STATUS,
+  MODEL_LAN_TYPE,
+} from '../../constants'
+import type {
+  ChatCompletionResponse,
+  ConversationTab,
+  Message,
+} from '../../types'
+import { getPendingVideoTask } from '../storage/video-task-store'
 import { parseThinkTags } from './message-reasoning-utils'
 import {
   completeAssistantTiming,
@@ -211,10 +221,31 @@ export function applyChatCompletionResponse(
 }
 
 /**
+ * 视频是异步任务：提交成功后有任务记录兜底，回到页面会拿着同一个
+ * task_id 续轮询。这类「还在等结果」的 pending 消息不能按普通中断
+ * 兜底成错误，否则用户每次回来看到的都是「生成已中断」而不是生成中。
+ *
+ * 配对依据：消息 createdAt 是点发送的时间，任务 startedAt 是提交接口
+ * 返回的时间，两者只差一个接口耗时，用与 getVideoTaskTarget 相同的容差。
+ */
+function isResumableVideoMessage(
+  message: Message,
+  tab?: ConversationTab
+): boolean {
+  if (tab !== MODEL_LAN_TYPE.video) return false
+  const task = getPendingVideoTask(tab)
+  if (!task) return false
+  return (message.createdAt ?? 0) >= task.startedAt - 60_000
+}
+
+/**
  * Sanitize messages loaded from storage.
  * Converts stuck loading/streaming messages to stable state.
  */
-export function sanitizeMessagesOnLoad(messages: Message[]): Message[] {
+export function sanitizeMessagesOnLoad(
+  messages: Message[],
+  tab?: ConversationTab
+): Message[] {
   let targetIndex = -1
 
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -227,6 +258,11 @@ export function sanitizeMessagesOnLoad(messages: Message[]): Message[] {
   }
 
   if (targetIndex === -1) return messages
+
+  // 有可续轮询的视频任务撑着：保持 loading 原样，结果由续轮询回填
+  if (isResumableVideoMessage(messages[targetIndex], tab)) {
+    return messages
+  }
 
   const finalized = finalizeMessage(messages[targetIndex])
   const hasContent = hasMessageContent(finalized)

@@ -18,6 +18,13 @@ const (
 	NameRuleSuffix
 )
 
+// Model.Type values: 0 text model, 1 image model, 2 video model.
+const (
+	ModelTypeText = iota
+	ModelTypeImage
+	ModelTypeVideo
+)
+
 type ModelSquareState string
 
 const (
@@ -38,6 +45,7 @@ type Model struct {
 	Description        string         `json:"description,omitempty" gorm:"type:text"`
 	Icon               string         `json:"icon,omitempty" gorm:"type:varchar(128)"`
 	Tags               string         `json:"tags,omitempty" gorm:"type:varchar(255)"`
+	Type               int            `json:"type" gorm:"default:0"`
 	VendorID           int            `json:"vendor_id,omitempty" gorm:"index"`
 	Endpoints          string         `json:"endpoints,omitempty" gorm:"type:text"`
 	SupportedEndpoints []string       `json:"supported_endpoints,omitempty" gorm:"-"`
@@ -97,6 +105,28 @@ func resolveModelMetadata(records []Model, names []string) map[string]*Model {
 		}
 	}
 	return resolved
+}
+
+// ResolveModelTypes returns the effective catalog type for each name using
+// metadata precedence (exact, prefix, suffix, contains). Names without
+// matching metadata keep the text default.
+func ResolveModelTypes(names []string) (map[string]int, error) {
+	resolved := make(map[string]int, len(names))
+	if len(names) == 0 {
+		return resolved, nil
+	}
+	var metadata []Model
+	if err := DB.Find(&metadata).Error; err != nil {
+		return nil, err
+	}
+	matched := resolveModelMetadata(metadata, names)
+	for _, name := range names {
+		resolved[name] = ModelTypeText
+		if record := matched[name]; record != nil {
+			resolved[name] = record.Type
+		}
+	}
+	return resolved, nil
 }
 
 // FillModelSquareStates applies the same metadata policy as the public catalog
@@ -265,7 +295,7 @@ func (mi *Model) Update() error {
 		}
 		mi.UpdatedTime = common.GetTimestamp()
 		return tx.Model(&Model{}).Where("id = ?", mi.Id).
-			Select("model_name", "description", "icon", "tags", "vendor_id", "endpoints", "status", "sync_official", "name_rule", "updated_time").Updates(mi).Error
+			Select("model_name", "description", "icon", "tags", "type", "vendor_id", "endpoints", "status", "sync_official", "name_rule", "updated_time").Updates(mi).Error
 	})
 }
 

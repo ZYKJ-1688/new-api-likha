@@ -190,15 +190,15 @@ test('a draft request with only the upstream name focuses the request field, and
       draftRequest={{ from: '', to: 'up-1', token: 1 }}
     />
   )
+  // The draft request is applied inside a requestAnimationFrame callback, so
+  // the second row commits before the effect that focuses it runs; wait for
+  // the focus itself instead of sampling it right after the row count.
   await waitFor(() =>
     expect(
-      screen.getAllByRole('combobox', { name: 'Request Model Name' })
-    ).toHaveLength(2)
+      screen.getAllByRole('combobox', { name: 'Request Model Name' })[1]
+    ).toHaveFocus()
   )
   expect(screen.getByDisplayValue('up-1')).toBeVisible()
-  expect(
-    screen.getAllByRole('combobox', { name: 'Request Model Name' })[1]
-  ).toHaveFocus()
 
   view.rerender(
     <ModelMappingEditor

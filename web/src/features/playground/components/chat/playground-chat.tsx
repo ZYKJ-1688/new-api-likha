@@ -37,6 +37,7 @@ import {
 import type {
   Message as MessageType,
   PlaygroundMessageLayoutMode,
+  PlaygroundConfig
 } from '../../types'
 import { MessageActions } from '../message/message-actions'
 import { MessageErrorActions } from '../message/message-error-actions'
@@ -47,6 +48,7 @@ import { PlaygroundEmptyState } from './playground-empty-state'
 const MAX_RENDERED_HISTORY_MESSAGES = 24
 
 interface PlaygroundChatProps {
+  config: PlaygroundConfig
   messages: MessageType[]
   onCopyMessage?: (message: MessageType) => void
   onRegenerateMessage?: (message: MessageType) => void
@@ -63,6 +65,7 @@ interface PlaygroundChatProps {
 }
 
 export function PlaygroundChat({
+  config,
   messages,
   onCopyMessage,
   onRegenerateMessage,
@@ -146,6 +149,7 @@ export function PlaygroundChat({
             />
           ) : (
             <PlaygroundMessageContent
+              config={config}
               alignment={alignment}
               actions={
                 <MessageActions

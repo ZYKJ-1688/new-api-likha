@@ -71,7 +71,11 @@ import {
 } from '@/lib/server-error-message'
 
 import { createModel, updateModel, getModel, getVendors } from '../../api'
-import { getNameRuleOptions, ENDPOINT_TEMPLATES } from '../../constants'
+import {
+  getNameRuleOptions,
+  ENDPOINT_TEMPLATES,
+  getModelTypeOptions,
+} from '../../constants'
 import { modelsQueryKeys, vendorsQueryKeys } from '../../lib'
 import {
   modelFormSchema,
@@ -120,6 +124,7 @@ export function ModelMutateDrawer(props: {
       status: 1,
       sync_official: 1,
       name_rule: 0,
+      type: 0,
     } as Model),
   })
   const vendorsQuery = useQuery({
@@ -180,6 +185,7 @@ export function ModelMutateDrawer(props: {
               status: 1,
               sync_official: 1,
               name_rule: 0,
+              type: 0,
             }) as Model
       )
     )
@@ -381,6 +387,44 @@ export function ModelMutateDrawer(props: {
                                 inheritedIcon={selectedVendor?.icon}
                                 inheritedName={selectedVendor?.name}
                               />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name='type'
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('Model Type')}</FormLabel>
+                            <FormControl>
+                              <RadioGroup
+                                onValueChange={(value) =>
+                                  field.onChange(Number.parseInt(value))
+                                }
+                                value={String(field.value ?? 0)}
+                                className='flex flex-wrap gap-x-6 gap-y-2'
+                              >
+                                {getModelTypeOptions(t).map((option) => (
+                                  <div
+                                    key={option.value}
+                                    className='flex items-center space-x-2'
+                                  >
+                                    <RadioGroupItem
+                                      value={String(option.value)}
+                                      id={`model-type-${option.value}`}
+                                    />
+                                    <Label
+                                      htmlFor={`model-type-${option.value}`}
+                                      className='cursor-pointer font-normal'
+                                    >
+                                      {option.label}
+                                    </Label>
+                                  </div>
+                                ))}
+                              </RadioGroup>
                             </FormControl>
                             <FormMessage />
                           </FormItem>

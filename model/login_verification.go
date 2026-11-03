@@ -54,6 +54,7 @@ func CreateUserSessionFromLoginFlow(token string, session *UserSession, validate
 		return ErrUserSessionInvalid
 	}
 	cacheDeadline := userSessionCacheDeadline()
+	var evicted []UserSession
 	_, err := ConsumeAuthFlowWithAction(token, AuthFlowMatch{
 		Purpose: AuthFlowPurposeLoginVerification, UserId: session.UserID,
 	}, func(tx *gorm.DB, flow *AuthFlow) error {
@@ -69,22 +70,33 @@ func CreateUserSessionFromLoginFlow(token string, session *UserSession, validate
 		}
 		now := time.Now().Unix()
 		var activeCount, issuanceCount int64
-		if err := tx.Model(&UserSession{}).Where("user_id = ? AND status = ? AND expires_at > ?", session.UserID, UserSessionStatusActive, now).Count(&activeCount).Error; err != nil {
-			return err
-		}
-		if activeCount >= int64(common.UserSessionActiveLimit) {
-			return ErrUserSessionLimit
-		}
 		if err := tx.Model(&UserSession{}).Where("user_id = ? AND created_at > ?", session.UserID, now-common.UserSessionIssuanceWindowSeconds).Count(&issuanceCount).Error; err != nil {
 			return err
 		}
 		if issuanceCount >= int64(common.UserSessionIssuanceLimit) {
 			return ErrUserSessionIssuanceLimit
 		}
+		if err := tx.Model(&UserSession{}).Where("user_id = ? AND status = ? AND expires_at > ?", session.UserID, UserSessionStatusActive, now).Count(&activeCount).Error; err != nil {
+			return err
+		}
+		if activeCount >= int64(common.UserSessionActiveLimit) {
+			if !common.UserSessionEvictOnLimit {
+				return ErrUserSessionLimit
+			}
+			// The user row is already locked in this transaction, so the
+			// eviction must share it instead of opening a nested one. The
+			// issuance check above runs first so a rejected login never
+			// evicts anything.
+			evicted, err = revokeLeastActiveUserSessions(tx, session.UserID, activeCount-int64(common.UserSessionActiveLimit)+1, "limit_eviction", now)
+			if err != nil {
+				return err
+			}
+		}
 		return createUserSessionWithTx(tx, session)
 	})
 	if err != nil {
 		return err
 	}
+	publishRevokedUserSessions(evicted)
 	return publishCreatedUserSession(session, cacheDeadline)
 }

@@ -47,6 +47,7 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command'
+import { Menu } from '@base-ui/react/menu';
 import {
   Drawer,
   DrawerContent,
@@ -659,28 +660,24 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
   }, [open, selectedGroup, selectedModel])
 
   const renderTrigger = () => (
-    <Button
+    <div
       aria-expanded={open}
       className={cn(
-        'h-8 max-w-[15rem] justify-start gap-2 border px-2.5 font-medium shadow-none',
-        'bg-background/80 hover:bg-accent/70 text-foreground',
+        'w-60 h-8 max-w-[15rem] flex px-2 py-2 items-center gap-1 border px-2.5 font-medium shadow-none',
+        'bg-background/80 rounded-md dark:bg-[#ffffff2b] text-foreground',
         'focus:!ring-0 focus:!outline-none',
         className
       )}
-      disabled={disabled}
-      role='combobox'
-      size='sm'
-      variant='outline'
-    >
+      >
       <CpuIcon className='text-muted-foreground size-4 shrink-0' />
-      <span className='min-w-0 truncate text-xs'>
+      <span className='flex-1 text-left min-w-0 truncate text-xs'>
         {currentModel?.label || t('Model')}
       </span>
       <span className='bg-muted text-muted-foreground hidden max-w-20 shrink-0 rounded px-1.5 py-0.5 text-[10px] sm:inline-flex'>
         {currentGroup?.label || t('Group')}
       </span>
       <ChevronsUpDown className='text-muted-foreground ml-auto size-3.5 shrink-0 opacity-60' />
-    </Button>
+    </div>
   )
 
   const renderGroupList = () => (
@@ -833,20 +830,30 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
       </DrawerContent>
     </Drawer>
   ) : (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger render={renderTrigger()} />
-      <PopoverContent
-        align='end'
-        className={cn(
-          'bg-popover z-50 w-[34rem] max-w-[calc(100vw-2rem)] rounded-xl border p-0 shadow-lg',
-          modelGroupSelectorLayoutClasses.desktopPanel
-        )}
-        collisionPadding={8}
-        side='top'
-        sideOffset={8}
-      >
-        {renderContent()}
-      </PopoverContent>
-    </Popover>
+    <Menu.Root
+      open={open}
+      onOpenChange={setOpen}  
+    >
+      <Menu.Trigger className='flex pr-1 pl-2.5 gap-2 items-center'>
+        {renderTrigger()}
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner 
+          alignOffset={-120}
+          align="start"
+          style={{ zIndex: 10000 }}
+        >
+          <Menu.Popup className="
+            border w-130 flex flex-col p-1.5 gap-1.5 group-[.is-user]:border-border/70
+            transition-all duration-150 ease-out rounded-lg mb-2
+            origin-[var(--transform-origin)] bg-white dark:bg-muted
+            data-[starting-style]:opacity-0 data-[starting-style]:scale-95
+            data-[ending-style]:opacity-0 data-[ending-style]:scale-95
+          ">
+            {renderContent()}
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
   )
 }

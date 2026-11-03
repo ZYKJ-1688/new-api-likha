@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
 
-import type { NameRule, ModelStatus, SyncSource } from './types'
+import type { NameRule, ModelStatus, ModelType, SyncSource } from './types'
 
 // ============================================================================
 // Pagination
@@ -36,6 +36,18 @@ export function getNameRuleOptions(t: TFunction) {
     { label: t('Prefix Match'), value: 1 as NameRule },
     { label: t('Contains Match'), value: 2 as NameRule },
     { label: t('Suffix Match'), value: 3 as NameRule },
+  ] as const
+}
+
+// ============================================================================
+// Model Type (Category) Options
+// ============================================================================
+
+export function getModelTypeOptions(t: TFunction) {
+  return [
+    { label: t('Text Model'), value: 0 as ModelType },
+    { label: t('Image Model'), value: 1 as ModelType },
+    { label: t('Video Model'), value: 2 as ModelType },
   ] as const
 }
 

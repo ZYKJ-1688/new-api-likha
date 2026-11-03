@@ -12,12 +12,14 @@ func TestInitUserSessionSettingsUsesPositiveFallbacksAndClampsWindow(t *testing.
 	previousIssuanceWindow := UserSessionIssuanceWindowSeconds
 	previousRevokedRetention := UserSessionRevokedRetentionDays
 	previousAlertThreshold := UserSessionHourlyAlertThreshold
+	previousEvictOnLimit := UserSessionEvictOnLimit
 	t.Cleanup(func() {
 		UserSessionActiveLimit = previousActiveLimit
 		UserSessionIssuanceLimit = previousIssuanceLimit
 		UserSessionIssuanceWindowSeconds = previousIssuanceWindow
 		UserSessionRevokedRetentionDays = previousRevokedRetention
 		UserSessionHourlyAlertThreshold = previousAlertThreshold
+		UserSessionEvictOnLimit = previousEvictOnLimit
 	})
 
 	t.Setenv("USER_SESSION_ACTIVE_LIMIT", "0")
@@ -32,7 +34,17 @@ func TestInitUserSessionSettingsUsesPositiveFallbacksAndClampsWindow(t *testing.
 	assert.Equal(t, int64(DefaultUserSessionIssuanceWindowSeconds), UserSessionIssuanceWindowSeconds)
 	assert.Equal(t, DefaultUserSessionRevokedRetentionDays, UserSessionRevokedRetentionDays)
 	assert.Equal(t, DefaultUserSessionHourlyAlertThreshold, UserSessionHourlyAlertThreshold)
+	assert.True(t, UserSessionEvictOnLimit, "eviction defaults to enabled when unset")
 
+	t.Setenv("USER_SESSION_EVICT_ON_LIMIT", "not-a-bool")
+	initUserSessionSettings()
+	assert.True(t, UserSessionEvictOnLimit, "an unparseable eviction flag falls back to the default")
+
+	t.Setenv("USER_SESSION_EVICT_ON_LIMIT", "false")
+	initUserSessionSettings()
+	assert.False(t, UserSessionEvictOnLimit)
+
+	t.Setenv("USER_SESSION_EVICT_ON_LIMIT", "true")
 	t.Setenv("USER_SESSION_ACTIVE_LIMIT", "12")
 	t.Setenv("USER_SESSION_ISSUANCE_LIMIT", "34")
 	t.Setenv("USER_SESSION_ISSUANCE_WINDOW_SECONDS", "172800")
@@ -42,6 +54,7 @@ func TestInitUserSessionSettingsUsesPositiveFallbacksAndClampsWindow(t *testing.
 
 	assert.Equal(t, 12, UserSessionActiveLimit)
 	assert.Equal(t, 34, UserSessionIssuanceLimit)
+	assert.True(t, UserSessionEvictOnLimit)
 	assert.Equal(t, int64(24*60*60), UserSessionIssuanceWindowSeconds)
 	assert.Equal(t, 1, UserSessionRevokedRetentionDays)
 	assert.Equal(t, 56, UserSessionHourlyAlertThreshold)

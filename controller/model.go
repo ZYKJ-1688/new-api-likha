@@ -371,3 +371,13 @@ func RetrieveModel(c *gin.Context, modelType int) {
 		})
 	}
 }
+
+// OfficialModels 获得所有官方渠道的模型列表（去重合并，按名称排序）
+func OfficialModels(c *gin.Context) {
+	models, err := model.GetOfficialModels()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, models)
+}

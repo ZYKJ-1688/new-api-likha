@@ -35,13 +35,35 @@ export const MESSAGE_STATUS = {
 // API endpoints
 export const API_ENDPOINTS = {
   CHAT_COMPLETIONS: '/pg/chat/completions',
+  CHAT_IMAGE_GENERATIONS: '/pg/images/generations',
+  CHAT_VIDEO_GENERATIONS: '/pg/videos',
   USER_MODELS: '/api/user/models',
   USER_GROUPS: '/api/user/self/groups',
 } as const
 
+export const MODEL_LAN_TYPE = {
+  text: 0,
+  image: 1,
+  video: 2,
+}
+
+export const CREATE_MODEL_TYPE = {
+  almighty: 1,
+  headAndTail: 2,
+}
+
 // Default group — uses 'default' as the safe fallback; auto-group is
 // only selected when the backend confirms it is available for the user.
 export const DEFAULT_GROUP = 'default' as const
+
+// 图片模式默认参数，对应参数面板默认选项：1.5K + 1:1，生成 1 张
+export const DEFAULT_IMAGE_SIZE = '1536x1536'
+export const DEFAULT_IMAGE_COUNT = 1
+
+// 视频模式默认参数，对应参数面板默认选项：480p + 4s + 16:9
+export const DEFAULT_VIDEO_SIZE = '480p'
+export const DEFAULT_VIDEO_DURATION = 4
+export const DEFAULT_VIDEO_RATIO = '16:9'
 
 // Default configuration
 export const DEFAULT_CONFIG: PlaygroundConfig = {
@@ -54,6 +76,13 @@ export const DEFAULT_CONFIG: PlaygroundConfig = {
   presence_penalty: 0,
   seed: null,
   stream: true,
+  type: 0,
+  size: DEFAULT_IMAGE_SIZE,
+  n: DEFAULT_IMAGE_COUNT,
+  videoSize: DEFAULT_VIDEO_SIZE,
+  videoDuration: DEFAULT_VIDEO_DURATION,
+  ratio: DEFAULT_VIDEO_RATIO,
+  createVideoMode: CREATE_MODEL_TYPE.almighty,
 }
 
 export const DEFAULT_PARAMETER_ENABLED: ParameterEnabled = {
@@ -68,8 +97,14 @@ export const DEFAULT_PARAMETER_ENABLED: ParameterEnabled = {
 // Storage keys
 export const STORAGE_KEYS = {
   CONFIG: 'playground_config',
-  MESSAGES: 'playground_messages',
   PARAMETER_ENABLED: 'playground_parameter_enabled',
+  MESSAGES: 'playground_messages', // 旧key，用于迁移
+  MESSAGES_TEXT: 'playground_messages_text',
+  MESSAGES_IMAGE: 'playground_messages_image',
+  MESSAGES_VIDEO: 'playground_messages_video',
+  // 视频是异步任务：提交成功后把 task_id 记下来，
+  // 用户离开页面（或刷新）后再回来可以接着轮询同一个任务
+  PENDING_VIDEO_TASKS: 'playground_pending_video_tasks',
 } as const
 
 // Error messages

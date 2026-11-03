@@ -47,6 +47,7 @@ type MetadataValues struct {
 	Endpoints   string `json:"endpoints"`
 	NameRule    int    `json:"name_rule"`
 	Status      int    `json:"status"`
+	Type        int    `json:"type"`
 }
 
 type MetadataSyncSelection struct {
@@ -98,6 +99,9 @@ func ValidateMetadataValues(values MetadataValues) error {
 	}
 	if values.Status != 0 && values.Status != 1 {
 		return errors.New("invalid catalog visibility")
+	}
+	if values.Type < ModelTypeText || values.Type > ModelTypeVideo {
+		return errors.New("invalid model type")
 	}
 	return ValidateModelEndpoints(values.Endpoints)
 }

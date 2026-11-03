@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"slices"
 	"strings"
 	"sync"
 
@@ -21,25 +22,27 @@ import (
 )
 
 type Channel struct {
-	Id                 int     `json:"id"`
-	Type               int     `json:"type" gorm:"default:0"`
-	Key                string  `json:"key" gorm:"not null"`
-	OpenAIOrganization *string `json:"openai_organization"`
-	TestModel          *string `json:"test_model"`
-	Status             int     `json:"status" gorm:"default:1"`
-	Name               string  `json:"name" gorm:"index"`
-	Weight             *uint   `json:"weight" gorm:"default:0"`
-	CreatedTime        int64   `json:"created_time" gorm:"bigint"`
-	TestTime           int64   `json:"test_time" gorm:"bigint"`
-	ResponseTime       int     `json:"response_time"` // in milliseconds
-	BaseURL            *string `json:"base_url" gorm:"column:base_url;default:''"`
-	Other              string  `json:"other"`
-	Balance            float64 `json:"balance"` // in USD
-	BalanceUpdatedTime int64   `json:"balance_updated_time" gorm:"bigint"`
-	Models             string  `json:"models"`
-	Group              string  `json:"group" gorm:"type:varchar(64);default:'default'"`
-	UsedQuota          int64   `json:"used_quota" gorm:"bigint;default:0"`
-	ModelMapping       *string `json:"model_mapping" gorm:"type:text"`
+	Id                   int     `json:"id"`
+	Type                 int     `json:"type" gorm:"default:0"`
+	Key                  string  `json:"key" gorm:"not null"`
+	OpenAIOrganization   *string `json:"openai_organization"`
+	TestModel            *string `json:"test_model"`
+	Status               int     `json:"status" gorm:"default:1"`
+	Name                 string  `json:"name" gorm:"index"`
+	Weight               *uint   `json:"weight" gorm:"default:0"`
+	IsOfficial           int     `json:"is_official"`
+	CreatedTime          int64   `json:"created_time" gorm:"bigint"`
+	TestTime             int64   `json:"test_time" gorm:"bigint"`
+	ResponseTime         int     `json:"response_time"` // in milliseconds
+	BaseURL              *string `json:"base_url" gorm:"column:base_url;default:''"`
+	Other                string  `json:"other"`
+	Balance              float64 `json:"balance"` // in USD
+	BalanceUpdatedTime   int64   `json:"balance_updated_time" gorm:"bigint"`
+	Models               string  `json:"models"`
+	Group                string  `json:"group" gorm:"type:varchar(64);default:'default'"`
+	UsedQuota            int64   `json:"used_quota" gorm:"bigint;default:0"`
+	ModelMapping         *string `json:"model_mapping" gorm:"type:text"`
+	OfficialModelMapping *string `json:"official_model_mapping" gorm:"type:text"`
 	//MaxInputTokens     *int    `json:"max_input_tokens" gorm:"default:0"`
 	StatusCodeMapping *string `json:"status_code_mapping" gorm:"type:varchar(1024);default:''"`
 	Priority          *int64  `json:"priority" gorm:"bigint;default:0"`
@@ -599,6 +602,12 @@ func (channel *Channel) Update() error {
 	if err != nil {
 		return err
 	}
+	if channel.IsOfficial == 0 {
+		err = DB.Model(channel).Select("is_official").Updates(channel).Error
+		if err != nil {
+			return err
+		}
+	}
 	DB.Model(channel).First(channel, "id = ?", channel.Id)
 	err = channel.UpdateAbilities(nil)
 	return err
@@ -1157,6 +1166,29 @@ func CountChannelTags(query *gorm.DB) (int64, error) {
 	var total int64
 	err := query.Where("tag is not null AND tag != ''").Distinct("tag").Count(&total).Error
 	return total, err
+}
+
+// GetOfficialModels returns the deduplicated, sorted model list aggregated
+// from all channels marked as official, regardless of their enabled status.
+func GetOfficialModels() ([]string, error) {
+	var modelLists []string
+	if err := DB.Model(&Channel{}).Where("is_official = ?", 1).Pluck("models", &modelLists).Error; err != nil {
+		return nil, err
+	}
+	modelSet := make(map[string]struct{})
+	for _, list := range modelLists {
+		for _, m := range strings.Split(list, ",") {
+			if m = strings.TrimSpace(m); m != "" {
+				modelSet[m] = struct{}{}
+			}
+		}
+	}
+	models := make([]string, 0, len(modelSet))
+	for m := range modelSet {
+		models = append(models, m)
+	}
+	slices.Sort(models)
+	return models, nil
 }
 
 // Get channels of specified type with pagination

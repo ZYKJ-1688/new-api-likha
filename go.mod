@@ -85,6 +85,7 @@ require (
 	go.opentelemetry.io/otel v1.41.0 // indirect
 	go.opentelemetry.io/otel/trace v1.41.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
+	golang.org/x/time v0.4.0 // indirect
 )
 
 require (
@@ -170,6 +171,7 @@ require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.46.0
 	github.com/QuantumNous/new-api/relaykit v0.0.0
 	github.com/QuantumNous/new-api/tokenkit v0.0.0
+	github.com/aliyun/alibabacloud-oss-go-sdk-v2 v1.6.1
 )
 
 replace github.com/QuantumNous/new-api/relaykit => ./relaykit

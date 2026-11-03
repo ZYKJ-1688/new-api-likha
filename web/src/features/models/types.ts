@@ -52,6 +52,7 @@ export interface Model {
   created_time: number
   updated_time: number
   name_rule: number
+  type?: number
   // Runtime fields
   bound_channels?: BoundChannel[]
   enable_groups?: string[]
@@ -326,6 +327,11 @@ export type NameRule = 0 | 1 | 2 | 3 // exact, prefix, contains, suffix
  * Model status type
  */
 export type ModelStatus = 0 | 1 // disabled, enabled
+
+/**
+ * Model category type
+ */
+export type ModelType = 0 | 1 | 2 // text, image, video
 
 /**
  * Quota type

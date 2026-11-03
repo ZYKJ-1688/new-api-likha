@@ -1,23 +1,19 @@
 /*
 Copyright (C) 2023-2026 QuantumNous
-
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
 published by the Free Software Foundation, either version 3 of the
 License, or (at your option) any later version.
-
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 GNU Affero General Public License for more details.
-
 You should have received a copy of the GNU Affero General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
-
 For commercial licensing, please contact support@quantumnous.com
 */
 import { MESSAGE_STATUS, STORAGE_KEYS } from '../../constants'
-import type { PlaygroundConfig, ParameterEnabled, Message } from '../../types'
+import type { PlaygroundConfig, ParameterEnabled, Message, ConversationTab } from '../../types'
 import {
   finalizeMessage,
   isAssistantMessagePending,
@@ -40,7 +36,6 @@ type StoredEnvelope<T> = {
   version: number
   data: T
 }
-
 const TRUNCATED_CONTENT_SUFFIX = '\n\n[...]'
 const MIN_PREFIX_COLLAPSE_LENGTH = 2000
 const MIN_REPEATED_SECTION_COUNT = 3
@@ -49,19 +44,17 @@ const SECTION_HEADING_LINE_PATTERN = /^#{2,6}\s+\d+\.\s+.+$/gm
 function readStoredValue(key: string): unknown | null {
   const saved = localStorage.getItem(key)
   if (!saved) return null
-
   return JSON.parse(saved) as unknown
 }
 
-function readStoredMessagesValue(): unknown | null {
-  const saved = localStorage.getItem(STORAGE_KEYS.MESSAGES)
+// ✅ 改造：接收key，不再硬编码STORAGE_KEYS.MESSAGES
+function readStoredMessagesValue(key: string): unknown | null {
+  const saved = localStorage.getItem(key)
   if (!saved) return null
-
   if (saved.length > MAX_STORED_MESSAGES_BYTES) {
-    localStorage.removeItem(STORAGE_KEYS.MESSAGES)
+    localStorage.removeItem(key)
     return null
   }
-
   return JSON.parse(saved) as unknown
 }
 
@@ -69,11 +62,9 @@ function unwrapStoredValue(value: unknown): unknown {
   if (!value || typeof value !== 'object') {
     return value
   }
-
   if ('version' in value && 'data' in value) {
     return (value as StoredEnvelope<unknown>).data
   }
-
   return value
 }
 
@@ -82,7 +73,6 @@ function writeStoredValue<T>(key: string, data: T): void {
     version: STORAGE_VERSION,
     data,
   }
-
   localStorage.setItem(key, JSON.stringify(payload))
 }
 
@@ -90,7 +80,6 @@ function trimMessages(messages: Message[]): Message[] {
   if (messages.length <= MAX_STORED_MESSAGES) {
     return messages
   }
-
   return messages.slice(-MAX_STORED_MESSAGES)
 }
 
@@ -100,7 +89,6 @@ function getMessageSize(message: Message): number {
     0
   )
   const reasoningSize = message.reasoning?.content.length ?? 0
-
   return versionsSize + reasoningSize
 }
 
@@ -108,11 +96,9 @@ function truncateText(text: string, maxLength: number): string {
   if (text.length <= maxLength) {
     return text
   }
-
   if (maxLength <= TRUNCATED_CONTENT_SUFFIX.length) {
     return text.slice(0, maxLength)
   }
-
   return `${text.slice(0, maxLength - TRUNCATED_CONTENT_SUFFIX.length)}${TRUNCATED_CONTENT_SUFFIX}`
 }
 
@@ -120,7 +106,6 @@ type SectionOccurrence = {
   heading: string
   index: number
 }
-
 function getSectionOccurrences(text: string): SectionOccurrence[] {
   const occurrences: SectionOccurrence[] = []
   const matches = text.matchAll(SECTION_HEADING_LINE_PATTERN)
@@ -129,13 +114,11 @@ function getSectionOccurrences(text: string): SectionOccurrence[] {
     if (index === undefined) {
       continue
     }
-
     occurrences.push({
       heading: match[0],
       index,
     })
   }
-
   return occurrences
 }
 
@@ -143,11 +126,9 @@ function getHeadingCounts(
   occurrences: SectionOccurrence[]
 ): Map<string, number> {
   const counts = new Map<string, number>()
-
   for (const occurrence of occurrences) {
     counts.set(occurrence.heading, (counts.get(occurrence.heading) ?? 0) + 1)
   }
-
   return counts
 }
 
@@ -156,26 +137,21 @@ function findLastRepeatedSectionRunStart(text: string): number {
   const headingCounts = getHeadingCounts(occurrences)
   const lastRepeatedIndexes: number[] = []
   const seenHeadings = new Set<string>()
-
   for (let index = occurrences.length - 1; index >= 0; index--) {
     const occurrence = occurrences[index]
     const count = headingCounts.get(occurrence.heading) ?? 0
-
     if (
       count < MIN_REPEATED_SECTION_COUNT ||
       seenHeadings.has(occurrence.heading)
     ) {
       continue
     }
-
     seenHeadings.add(occurrence.heading)
     lastRepeatedIndexes.push(occurrence.index)
   }
-
   if (lastRepeatedIndexes.length === 0) {
     return -1
   }
-
   return Math.min(...lastRepeatedIndexes)
 }
 
@@ -183,12 +159,10 @@ function collapseRepeatedSectionSnapshots(text: string): string {
   if (text.length < MIN_PREFIX_COLLAPSE_LENGTH) {
     return text
   }
-
   const lastRepeatedRunStart = findLastRepeatedSectionRunStart(text)
   if (lastRepeatedRunStart === -1) {
     return text
   }
-
   return text.slice(lastRepeatedRunStart)
 }
 
@@ -197,18 +171,15 @@ function normalizeStoredMessageForLoad(message: Message): Message {
   const versions = message.versions.map((version) => {
     const collapsedContent = collapseRepeatedSectionSnapshots(version.content)
     const content = truncateText(collapsedContent, MAX_LOADED_MESSAGE_CHARS)
-
     if (content === version.content && collapsedContent === version.content) {
       return version
     }
-
     changed = true
     return {
       ...version,
       content,
     }
   })
-
   const reasoning = message.reasoning
     ? {
         ...message.reasoning,
@@ -218,31 +189,24 @@ function normalizeStoredMessageForLoad(message: Message): Message {
         ),
       }
     : undefined
-
   if (reasoning?.content !== message.reasoning?.content) {
     changed = true
   }
-
   const normalized = changed ? { ...message, versions, reasoning } : message
-
   if (!isAssistantMessagePending(normalized)) {
     return normalized
   }
-
   const hasContent = hasMessageContent(normalized)
   const hasReasoning = normalized.reasoning?.content.trim()
-
   if (!hasContent && !hasReasoning) {
     return normalized
   }
-
   const completedAt =
     normalized.completedAt ??
     normalized.reasoning?.completedAt ??
     normalized.startedAt ??
     normalized.createdAt ??
     Date.now()
-
   return completeAssistantTiming(
     {
       ...finalizeMessage(normalized),
@@ -256,22 +220,18 @@ function normalizeStoredMessageForLoad(message: Message): Message {
 function trimMessagesByContentSize(messages: Message[]): Message[] {
   let totalSize = 0
   const result: Message[] = []
-
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index]
     const messageSize = getMessageSize(message)
-
     if (
       result.length > 0 &&
       totalSize + messageSize > MAX_LOADED_MESSAGES_CHARS
     ) {
       break
     }
-
     totalSize += messageSize
     result.push(message)
   }
-
   return result.reverse()
 }
 
@@ -282,7 +242,6 @@ export function loadConfig(): Partial<PlaygroundConfig> {
   try {
     const saved = readStoredValue(STORAGE_KEYS.CONFIG)
     if (!saved) return {}
-
     return playgroundConfigSchema.parse(unwrapStoredValue(saved))
   } catch (error) {
     // eslint-disable-next-line no-console
@@ -311,7 +270,6 @@ export function loadParameterEnabled(): Partial<ParameterEnabled> {
   try {
     const saved = readStoredValue(STORAGE_KEYS.PARAMETER_ENABLED)
     if (!saved) return {}
-
     return parameterEnabledSchema.parse(unwrapStoredValue(saved))
   } catch (error) {
     // eslint-disable-next-line no-console
@@ -335,32 +293,66 @@ export function saveParameterEnabled(
   }
 }
 
+// ========== 改造 loadMessages，增加tab参数 + 旧数据迁移 ==========
 /**
- * Load messages from localStorage
+ * Load messages from localStorage for specific tab
  */
-export function loadMessages(): Message[] | null {
+export function loadMessages(tab: ConversationTab): Message[] | null {
   try {
-    const saved = readStoredMessagesValue()
-    if (!saved) return null
+    let storageKey: string
+    switch (tab) {
+      case 0:
+        storageKey = STORAGE_KEYS.MESSAGES_TEXT
+        break
+      case 1:
+        storageKey = STORAGE_KEYS.MESSAGES_IMAGE
+        break
+      case 2:
+        storageKey = STORAGE_KEYS.MESSAGES_VIDEO
+        break
+    }
 
-    const parsed = messagesSchema.parse(unwrapStoredValue(saved)) as Message[]
+    let saved = readStoredMessagesValue(storageKey)
+
+    // 旧数据迁移：text tab 如果新key为空，读取老的 STORAGE_KEYS.MESSAGES
+    if (tab === 0 && !saved) {
+      const oldSaved = readStoredMessagesValue(STORAGE_KEYS.MESSAGES)
+      if (oldSaved) {
+        // 把旧数据迁移到新text存储
+        const oldParsed = messagesSchema.parse(unwrapStoredValue(oldSaved)) as Message[]
+        saveMessages(oldParsed, 0)
+        // 迁移后读取新key
+        saved = readStoredMessagesValue(storageKey)
+        // 可选：迁移成功删除旧key，避免反复迁移
+        localStorage.removeItem(STORAGE_KEYS.MESSAGES)
+      }
+    }
+
+    if (!saved) return null
+    // 核心修复：用safeParse替代parse，避免非法数据直接抛错
+    const parseResult = messagesSchema.safeParse(unwrapStoredValue(saved))
+    if (!parseResult.success) {
+      // 存储数据损坏，直接清理脏数据，避免下次加载重复报错
+      localStorage.removeItem(storageKey)
+      console.warn('Stored messages data corrupted, cleared automatically')
+      return null
+    }
+    const parsed = parseResult.data as Message[]
     const normalized = parsed.map(normalizeStoredMessageForLoad)
     const normalizedChanged = normalized.some(
       (message, index) => message !== parsed[index]
     )
     const trimmed = trimMessages(normalized)
     const sizeTrimmed = trimMessagesByContentSize(trimmed)
-    const sanitized = sanitizeMessagesOnLoad(sizeTrimmed)
-
+    const sanitized = sanitizeMessagesOnLoad(sizeTrimmed, tab)
     if (
       normalizedChanged ||
       trimmed !== normalized ||
       sizeTrimmed !== trimmed ||
       sanitized !== sizeTrimmed
     ) {
-      saveMessages(sanitized)
+      saveMessages(sanitized, tab)
     }
-
     return sanitized
   } catch (error) {
     // eslint-disable-next-line no-console
@@ -369,14 +361,27 @@ export function loadMessages(): Message[] | null {
   return null
 }
 
+// ========== 改造 saveMessages，增加tab参数 ==========
 /**
- * Save messages to localStorage
+ * Save messages to localStorage for specific tab
  */
-export function saveMessages(messages: Message[]): void {
+export function saveMessages(messages: Message[], tab: ConversationTab): void {
   try {
+    let storageKey: string
+    switch (tab) {
+      case 0:
+        storageKey = STORAGE_KEYS.MESSAGES_TEXT
+        break
+      case 1:
+        storageKey = STORAGE_KEYS.MESSAGES_IMAGE
+        break
+      case 2:
+        storageKey = STORAGE_KEYS.MESSAGES_VIDEO
+        break
+    }
     const trimmed = trimMessages(messages)
     const parsed = messagesSchema.parse(trimmed) as Message[]
-    writeStoredValue(STORAGE_KEYS.MESSAGES, parsed)
+    writeStoredValue(storageKey, parsed)
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Failed to save messages:', error)
@@ -391,6 +396,10 @@ export function clearPlaygroundData(): void {
     localStorage.removeItem(STORAGE_KEYS.CONFIG)
     localStorage.removeItem(STORAGE_KEYS.PARAMETER_ENABLED)
     localStorage.removeItem(STORAGE_KEYS.MESSAGES)
+    // 新增：清除三个tab消息存储key
+    localStorage.removeItem(STORAGE_KEYS.MESSAGES_TEXT)
+    localStorage.removeItem(STORAGE_KEYS.MESSAGES_IMAGE)
+    localStorage.removeItem(STORAGE_KEYS.MESSAGES_VIDEO)
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Failed to clear playground data:', error)
