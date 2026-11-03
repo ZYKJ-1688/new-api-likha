@@ -1,0 +1,317 @@
+name: prod-build
+
+# 生产（正式环境）发布流水线
+#
+# ⚠️ 生产环境：主站在马尼拉（ack-newapi-mnl）、备站在新加坡（ack-newapi-sg）。
+#    2026-11-01 起两个集群**各自装了一套 ArgoCD**（argocd-mnl.likha.hk / argocd-sg.likha.hk），
+#    Application 分别是 `mnl-prod` / `sg-standby`，当前是 **T3（手动同步）**。
+#
+# 链路：push tag v* → 构建镜像 → 推马尼拉 ACR(newapi-prod) → Trivy 阻断 + SBOM
+#      → 向 ops 仓**开 PR**（不直接合并）→ 人工批准合并 → 值班人在两套 ArgoCD UI 上
+#        「先看 Diff、再点 Sync」→ 30 min 观察窗口
+# 真源：new-api-likha-ops/overlays/mnl-prod/ 与 overlays/sg-standby/
+#
+# 与 dev-build / pre-build 的三处**刻意不同**（依据《git开发-发布-值班规范》）：
+#   ① 触发用 **git tag v***，不是分支 push（规范 §7.2：发布 tag 一律 vX.Y.Z 打在 main 上）
+#   ② 镜像 tag **就是 git tag**，不加环境前缀、不加时间戳（规范 §7.2「镜像 tag 与 git tag 严格一致」）
+#   ③ ops 变更**开 PR 等人工批准**，绝不直推 main（规范 §7.4：prod 的 ops PR 需 ≥1 名值班人批准）
+#
+# ⚠️ 打 tag 会**同时**触发 release.yml（上游的三平台二进制打包，`on.push.tags: ['*']`）。
+#    两条流水线并行、互不干扰；这是仓库既有行为，不要为了「干净」去改 release.yml 的 tags 过滤。
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的 tag（如 v1.2.3）'
+        required: true
+
+permissions:
+  contents: read
+
+# 生产发布**绝不取消**正在跑的构建：中途取消会留下「镜像推了但 ops 没回写」的半成品状态
+concurrency:
+  group: prod-build-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  ACR_NAMESPACE: newapi-prod
+  ACR_REPO: newapi-master
+  OPS_REPO: ZYKJ-1688/new-api-likha-ops
+  OPS_ENV: mnl-prod
+  SMOKE_URL: https://www.likha.hk/api/status
+
+jobs:
+  guard:
+    name: Guard (tag 格式 + 发布窗口)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.res.outputs.tag }}
+    steps:
+      - name: Resolve & validate tag
+        id: res
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          # 规范 §7.2：SemVer，可选 +定制段 或 -rc.N 预发布标识
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
+            echo "::error::tag '$TAG' 不符合 vX.Y.Z（可带 -rc.N / +定制段），拒绝发布"
+            exit 1
+          fi
+          # 预发布标识不该进 prod
+          case "$TAG" in
+            *-rc.*|*-alpha*|*-beta*)
+              echo "::error::'$TAG' 是预发布 tag，应该走 pre 环境，不能发 prod"
+              exit 1 ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+
+      - name: 发布窗口检查（仅提示，不阻断）
+        # 规范 §10.1：常规发布固定周二 10:00-12:00，避开周五 / 节假日前一天 / 18:00 后。
+        # 这里**只警告不阻断** —— hotfix 必须能在任何时间发（§10.4 走双人确认，不是靠流水线拦）。
+        run: |
+          DOW=$(TZ='Asia/Shanghai' date +%u)   # 1=周一 … 7=周日
+          HH=$(TZ='Asia/Shanghai' date +%H)
+          NOW=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S %Z')
+          echo "当前：$NOW（周$DOW，${HH}时）"
+          if [ "$DOW" = "2" ] && [ "$HH" -ge 10 ] && [ "$HH" -lt 20 ]; then
+            echo "✅ 在常规发布窗口内（周二 10:00-20:00）"
+          else
+            echo "::warning::不在常规发布窗口（周二 10:00-20:00 Asia/Shanghai）—— 若非常规发布（hotfix），需值班 Owner + 1 人双人确认（规范 §10.4）"
+          fi
+
+  build-push:
+    name: Build & push image
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: Stamp VERSION（镜像内版本号 = 发布 tag，供 /api/status 反查）
+        run: echo "${{ needs.guard.outputs.tag }}" > VERSION
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Login ACR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ secrets.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build & push
+        id: push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          # 关掉 provenance/sbom attestation：否则 tag 会变成 OCI image index，
+          # 顶层 index digest 与 amd64 manifest digest 对不上（2026-10-27 踩过）。
+          # SBOM 由下方独立步骤生成，不依赖 buildx 的 attestation。
+          provenance: false
+          sbom: false
+          tags: ${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.ACR_REPO }}:${{ needs.guard.outputs.tag }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.guard.outputs.tag }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=prodbuild
+          cache-to: type=gha,mode=max,scope=prodbuild
+
+      - name: Trivy scan（CRITICAL 阻断）
+        # 规范 §9.3：Trivy CRITICAL 阻断发布。这里与前两个环境**不同**：dev/pre 是 report-only，
+        # prod 必须 exit-code 1 —— 带 CRITICAL 的镜像不许上生产。
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.ACR_REPO }}@${{ steps.push.outputs.digest }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true     # 只拦「有修复方案」的 CRITICAL，避免基础镜像无解漏洞永久堵发布
+          exit-code: "1"
+
+      - name: SBOM（CycloneDX）
+        # 规范 §9.3：每镜像生成 CycloneDX SBOM 随发布留存，用于漏洞反查与合规审计。
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.ACR_REPO }}@${{ steps.push.outputs.digest }}
+          format: cyclonedx
+          output: sbom-${{ needs.guard.outputs.tag }}.cdx.json
+
+      - name: Upload SBOM
+        # TODO: 按规范 §8.2 应 pin 到 commit SHA，此处暂用大版本号（v4），下次统一升级时替换
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ needs.guard.outputs.tag }}
+          path: sbom-*.cdx.json
+          retention-days: 180
+
+      - name: Summary
+        run: |
+          {
+            echo "### prod 构建完成"
+            echo "- tag: \`${{ needs.guard.outputs.tag }}\`"
+            echo "- digest: \`${{ steps.push.outputs.digest }}\`"
+            echo "- 下一步：向 ops 仓开 PR，等值班人批准"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  bump-ops-pr:
+    name: Open ops PR (mnl-prod + sg-standby)
+    needs: [guard, build-push]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Clone ops repo
+        env:
+          OPS_REPO_TOKEN: ${{ secrets.OPS_REPO_TOKEN }}
+        run: |
+          git clone --depth 1 "https://x-access-token:${OPS_REPO_TOKEN}@github.com/${OPS_REPO}.git" ops
+
+      - name: Bump overlay on a release branch
+        id: bump
+        working-directory: ops
+        env:
+          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          TAG: ${{ needs.guard.outputs.tag }}
+          DIGEST: ${{ needs.build-push.outputs.digest }}
+        run: |
+          IMAGE="${ACR_REGISTRY}/${ACR_NAMESPACE}/${ACR_REPO}"
+          case "$IMAGE" in
+            *aliyuncs.com/*) : ;;
+            *) echo "::error::ACR_REGISTRY 拼接异常，拒绝写入: '$IMAGE'"; exit 1 ;;
+          esac
+          echo "target = ${IMAGE}:${TAG}  digest=${DIGEST}"
+
+          git config user.name  "gitops-bot"
+          git config user.email "gitops-bot@users.noreply.github.com"
+          git checkout -b "release/prod-${TAG}"
+
+          # 生产主备的仓库主机不同：主站用 -vpc（同区内网）、备站用公网。
+          # 从 ACR_REGISTRY 推导出另一种形态，两个 site 分别写。
+          case "$ACR_REGISTRY" in
+            *-vpc.*) PUB="${ACR_REGISTRY/-vpc./.}"; VPC="$ACR_REGISTRY" ;;
+            *)       VPC="${ACR_REGISTRY/registry./registry-vpc.}"; PUB="$ACR_REGISTRY" ;;
+          esac
+          echo "mnl → ${VPC}/${ACR_NAMESPACE}/${ACR_REPO}:${TAG}"
+          echo "sg  → ${PUB}/${ACR_NAMESPACE}/${ACR_REPO}:${TAG}"
+          # stable 与 master 一起改；canary 是独立灰度通道，不由发布流水线改
+          bash scripts/set-image-prod.sh mnl app "${VPC}/${ACR_NAMESPACE}/${ACR_REPO}:${TAG}"
+          bash scripts/set-image-prod.sh sg  app "${PUB}/${ACR_NAMESPACE}/${ACR_REPO}:${TAG}"
+          git diff --stat
+
+          if git diff --cached --quiet && git diff --quiet; then
+            echo "manifest 无变化（该 tag 已写入且一致）⇒ 不重复开 PR"
+            # 用 step output 而不是 $GITHUB_ENV：动态 env 变量无法被工作流静态校验，
+            # 会把下方的 if 判定为无效上下文引用。
+            echo "no_change=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git add -A
+          git commit -m "release(${OPS_ENV}): ${TAG} (src=${GITHUB_SHA:0:7})"
+          # 禁止 force push（ops 仓红线）
+          git push origin "release/prod-${TAG}"
+
+      - name: Create PR（**不自动合并**）
+        # manifest 无变化时上一步已 exit 0 且未推送分支，这里跳过，避免 gh pr create 因
+        # 「No commits between main and release/...」变红。
+        if: steps.bump.outputs.no_change != '1'
+        working-directory: ops
+        env:
+          GH_TOKEN: ${{ secrets.OPS_REPO_TOKEN }}
+          TAG: ${{ needs.guard.outputs.tag }}
+          DIGEST: ${{ needs.build-push.outputs.digest }}
+        run: |
+          # 形态检查：同名 PR 已存在时不让流水线变红（重跑场景）
+          EXISTING=$(gh pr list --repo "$OPS_REPO" --head "release/prod-${TAG}" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            echo "PR #$EXISTING 已存在，跳过创建"
+            echo "::notice title=ops PR 已存在::#${EXISTING} release/prod-${TAG}"
+            exit 0
+          fi
+
+          cat > /tmp/pr-body.md <<EOF
+          ## prod 发布：${TAG}
+
+          | 项 | 值 |
+          |---|---|
+          | 镜像 | \`${ACR_NAMESPACE}/${ACR_REPO}:${TAG}\` |
+          | digest | \`${DIGEST}\` |
+          | 源 commit | \`${GITHUB_SHA}\` |
+          | 触发 | \`${GITHUB_REF_NAME}\` |
+
+          ### 合并前必须确认
+          - [ ] 该版本已在 **pre 环境**完成回归 + 冒烟（P0/P1/P2 清零）
+          - [ ] Trivy 无 CRITICAL（流水线已阻断，此处为人工复核）
+          - [ ] 处于常规发布窗口（周二 10:00-20:00），或已走 hotfix 双人确认
+          - [ ] 回滚方案明确（\`git revert\` 本 commit 即可回退镜像）
+
+          ### 合并后（两套 ArgoCD，T3 手动同步）
+          1. **主站** https://argocd-mnl.likha.hk → Application \`mnl-prod\`
+             → 点 **Diff** 逐条看（预期只有 \`Deployment/new-api-stable\`、\`new-api-master\`
+             两处镜像 tag 变化）→ 确认无删除项后点 **Sync**（**不要勾 Prune**）
+          2. **备站** https://argocd-sg.likha.hk → Application \`sg-standby\` 同样操作
+          3. 两者都到 \`Synced / Healthy\` 后进入 **30 min 观察窗口**（错误率 / P99 / 告警 / 日志）
+
+          > 回滚：ops 仓 \`git revert\` 本 commit → 在 ArgoCD 里再点一次 Sync（把镜像 tag 退回上一版）。
+
+          > 本 PR 由 \`prod-build.yml\` 自动创建，**不会自动合并**。请值班 Owner 批准。
+          EOF
+
+          gh pr create \
+            --repo "$OPS_REPO" \
+            --base main \
+            --head "release/prod-${TAG}" \
+            --title "release(mnl-prod): ${TAG}" \
+            --body-file /tmp/pr-body.md
+
+      - name: Summary
+        run: |
+          {
+            echo "### ops PR 已提交（待人工批准）"
+            echo "分支：\`release/prod-${{ needs.guard.outputs.tag }}\`"
+            echo ""
+            echo "**批准并合并后**还需值班人在两套 ArgoCD UI 上「先看 Diff、再点 Sync」（T3 手动同步）。这是设计如此，不要改成自动合并。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  smoke:
+    # 生产 ArgoCD 是 **T3 手动同步**：PR 合并后要值班人在 UI 点 Sync，CI 观察不到「自动收敛」。
+    # 因此本 job 改为**非阻断**：只确认「现网当前版本」，未收敛给提示不给红。
+    # 真正的上线确认由值班人在 Sync 后重跑本 workflow（workflow_dispatch）完成。
+    name: Smoke (advisory · 生产 T3 手动同步)
+    needs: [guard, bump-ops-pr]
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Probe current prod version
+        # 只报「现网现在跑什么」，不判断发布成功与否。
+        # T3 手动同步 ⇒ CI 无法观察到收敛；把这一步做成阻断只会制造假红。
+        env:
+          TAG: ${{ needs.guard.outputs.tag }}
+        run: |
+          echo "目标版本：$TAG"
+          echo "现网版本（$SMOKE_URL）："
+          code=$(curl -s -o /tmp/status.json -w '%{http_code}' -m 15 "$SMOKE_URL" || true)
+          echo "  http=$code"
+          grep -o '"version":"[^"]*"' /tmp/status.json 2>/dev/null | head -1 || true
+          if [ "$code" = "200" ] && grep -q "\"$TAG\"" /tmp/status.json; then
+            echo "::notice title=已上线::$TAG 已在线上运行"
+          else
+            echo "::notice title=待人工发布::请在 ops PR 合并后到 argocd-mnl/argocd-sg 点 Sync，再重跑本 workflow 确认"
+          fi
