@@ -2,10 +2,12 @@ name: pre-build
 
 # 雅加达 pre（预发布）环境发布流水线（GitOps）
 #
-# 链路：push release/* → 构建镜像 → 推马尼拉 ACR(newapi-pre) → 回写 ops 仓（写不可变 tag）→ ArgoCD 收敛
+# 链路：push release/* 或 main（PR 合并到 main 后的 push 自动触发）
+#      → 构建镜像 → 推马尼拉 ACR(newapi-pre) → 回写 ops 仓（写不可变 tag）→ ArgoCD 收敛
 # 真源：new-api-likha-ops/overlays/jkt-pre/kustomization.yaml
 #
-# 与 dev-build.yml 的差异**只有环境参数**（ACR_NAMESPACE / OPS_ENV / SMOKE_URL / tag 前缀）。
+# 与 dev-build.yml 的差异只有**环境参数**（ACR_NAMESPACE / OPS_ENV / SMOKE_URL / tag 前缀）
+# 和**触发范围**（dev 听 development push；pre 听 release/* 与 main 的 push）。
 # 刻意保持同构：预发要验证的正是「同一条发布链路」，链路不同就失去了预发的意义。
 #
 # 四条红线（同 dev）：
@@ -16,7 +18,11 @@ name: pre-build
 
 on:
   push:
-    branches: ['release/*']
+    # main 受保护，push 只能来自 merge queue 的 PR 合并 —— 即「PR 合并成功后自动发布 pre」；
+    # 纯文档/deploy/docs 改动的合并由 paths-ignore 跳过，不空耗构建。
+    branches:
+      - 'release/*'
+      - 'main'
     paths-ignore:
       - '**/*.md'
       - 'deploy/**'
@@ -27,7 +33,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: pre-build-${{ github.ref }}
+  # main 与 release/* 的 push 部署的是同一个 jkt-pre：统一分组串行化，
+  # 避免两个 ref 同时回写 ops 仓互相覆盖；新 push 取消在途构建（最新内容优先）。
+  group: pre-build
   cancel-in-progress: true
 
 env:
