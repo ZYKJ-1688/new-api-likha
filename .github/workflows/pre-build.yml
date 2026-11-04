@@ -33,7 +33,8 @@ on:
   #    （2026-11-04 实测：直接建 release/0.0.0-probe，pre-build 零 run）。
   #    而 10.2 流程的 D-1 步正是「切 release 分支 → CI 出 rc 镜像 → 上 pre」，
   #    所以用 create 事件兜住「分支刚创建」这一动作 —— create 不受 paths 过滤影响。
-  #    代价：create 对 tag 也会触发，故 build-push 用 job 级 if 只放行 release/* 分支。
+  #    代价：create 对 tag 也会触发，job 级 if 分流处理：分支只放行 release/* 与 main，
+  #    tag 全部放行（对 main 打版本 tag 时同步发 pre）。
   #    ⚠️ create 事件只认**默认分支（main）**上的 workflow 定义，改完必须同步到 main 才生效。
   create:
   workflow_dispatch:
@@ -57,9 +58,11 @@ env:
 jobs:
   build-push:
     name: Build & push image
-    # create 事件对分支和 tag 都会触发，这里只接受 release/* 分支与 main 的创建；
+    # create 事件对分支和 tag 都会触发：分支只放行 release/* 与 main 的创建；
+    # tag 全部放行 —— 对 main 打版本 tag 时同步发 pre 环境（镜像 tag 仍为
+    # pre-时间戳-sha7，与 prod 的 vX.Y.Z 互不冲突，靠 sha 可互相对账）。
     # 其余事件（push / workflow_dispatch）照旧放行。
-    if: github.event_name != 'create' || (github.ref_type == 'branch' && (startsWith(github.ref_name, 'release/') || github.ref_name == 'main'))
+    if: github.event_name != 'create' || github.ref_type == 'tag' || (github.ref_type == 'branch' && (startsWith(github.ref_name, 'release/') || github.ref_name == 'main'))
     runs-on: ubuntu-latest
     timeout-minutes: 35
     outputs:
