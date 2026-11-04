@@ -79,18 +79,22 @@ jobs:
 
       - name: Compute tag
         id: meta
-        # 镜像 tag 两类格式，统一 pre- 前缀：
+        # 镜像 tag 两类格式，统一 pre- 前缀并内嵌来源：
         #   打 tag（create tag 事件）→ pre-<tag名>（如 pre-v1.0.2），与 prod 的 vX.Y.Z 前缀对齐；
-        #   分支 push（release/*、main）→ pre-YYYYMMDD-HHMMSS-<sha7>，
+        #   分支 push（release/*、main）→ pre-<分支名>-YYYYMMDD-HHMMSS-<sha7>：
+        #     main → pre-main-…；release/v1.0.0-rc.1 → pre-v1.0.0-rc.1-…（去掉 release/ 前缀）。
         #   ★ 精确到秒的理由同 dev-build：ACR tag 不可变，分支可反复推，秒级粒度才不撞名。
         #   ★ 时区显式钉 Asia/Shanghai，保证与 dev 的 tag 在同一时间轴上可比较。
+        #   ★ Docker tag 不允许「/」，分支名需去 release/ 前缀并替换非法字符。
         # ⚠️ pre-<tag名> 受 ACR「不可变」约束：同一版本号只能推送一次，
         #    重跑/重推同一 tag 会直接失败 —— 这是「tag 即版本」语义的代价。
         run: |
           if [ "$GITHUB_EVENT_NAME" = "create" ] && [ "$GITHUB_REF_TYPE" = "tag" ]; then
             TAG="pre-${GITHUB_REF_NAME}"
           else
-            TAG="pre-$(TZ='Asia/Shanghai' date +%Y%m%d-%H%M%S)-$(git rev-parse --short=7 HEAD)"
+            BRANCH="${GITHUB_REF_NAME#release/}"
+            BRANCH="${BRANCH//\//-}"
+            TAG="pre-${BRANCH}-$(TZ='Asia/Shanghai' date +%Y%m%d-%H%M%S)-$(git rev-parse --short=7 HEAD)"
           fi
           IMAGE="${{ secrets.ACR_REGISTRY }}/${ACR_NAMESPACE}/${ACR_REPO}"
           echo "tag=$TAG"     >> "$GITHUB_OUTPUT"
