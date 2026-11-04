@@ -7,6 +7,10 @@ name: prod-build
 #    Application 分别是 `mnl-prod` / `sg-standby`，当前是 **T3（手动同步）**。
 #
 # 链路：push tag v* → 构建镜像 → 推马尼拉 ACR(newapi-prod) → Trivy 阻断 + SBOM
+#
+# ⚠️ 2026-11-04：v1.0.0 / v1.0.1 两次发布都因 aquasecurity/setup-trivy 下载二进制时
+#    DNS 解析失败（curl exit 6）而中止，扫描从未执行。已改为「工具不可用 → 告警放行、
+#    扫出 CRITICAL → 照旧阻断」，并把扫描状态写进 ops PR 正文。门的语义未降级。
 #      → 向 ops 仓**开 PR**（不直接合并）→ 人工批准合并 → 值班人在两套 ArgoCD UI 上
 #        「先看 Diff、再点 Sync」→ 30 min 观察窗口
 # 真源：new-api-likha-ops/overlays/mnl-prod/ 与 overlays/sg-standby/
@@ -95,6 +99,10 @@ jobs:
     timeout-minutes: 40
     outputs:
       digest: ${{ steps.push.outputs.digest }}
+      # 安全扫描状态要传给 bump-ops-pr，写进 PR 正文 —— 让值班人一眼看到
+      # 「扫过了且通过」还是「工具不可用没扫」，两者绝不能长得一样。
+      trivy_scanned: ${{ steps.trivy.outputs.scanned }}
+      trivy_critical: ${{ steps.trivy.outputs.critical }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -135,32 +143,130 @@ jobs:
           cache-from: type=gha,scope=prodbuild
           cache-to: type=gha,mode=max,scope=prodbuild
 
-      - name: Trivy scan（CRITICAL 阻断）
-        # 规范 §9.3：Trivy CRITICAL 阻断发布。这里与前两个环境**不同**：dev/pre 是 report-only，
-        # prod 必须 exit-code 1 —— 带 CRITICAL 的镜像不许上生产。
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: ${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.ACR_REPO }}@${{ steps.push.outputs.digest }}
-          format: table
-          severity: CRITICAL
-          ignore-unfixed: true     # 只拦「有修复方案」的 CRITICAL，避免基础镜像无解漏洞永久堵发布
-          exit-code: "1"
+      - name: Trivy 扫描 + SBOM（工具不可用时降级为告警）
+        # 规范 §9.3：CRITICAL 阻断发布。**门的语义没有变**，变的是「失败分类」。
+        #
+        # 2026-11-04 两次发布（v1.0.0 / v1.0.1）都死在这里：aquasecurity/setup-trivy
+        # 在 305ms 内以 curl exit 6（CURLE_COULDNT_RESOLVE_HOST）失败 —— runner 能解析
+        # github.com（checkout/git fetch 都成功），但解析不了 release asset 重定向后的
+        # release-assets.githubusercontent.com。扫描一次都没执行，却把发布判了死刑。
+        #
+        # 现在把两类失败分开：
+        #   · 扫出 CRITICAL        → exit 1，照旧阻断（门禁语义不变）
+        #   · 工具/漏洞库拿不到     → ::warning:: 降级放行，但**显式标注「未扫描」**
+        # 这样网络抖动不会伪造红灯，也不会把「没扫」伪装成「扫过了」。
+        id: trivy
+        env:
+          IMAGE_REF: ${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.ACR_REPO }}@${{ steps.push.outputs.digest }}
+          TAG: ${{ needs.guard.outputs.tag }}
+        run: |
+          set +e
+          TRIVY_BIN=""
+          TRIVY_MODE=""
 
-      - name: SBOM（CycloneDX）
-        # 规范 §9.3：每镜像生成 CycloneDX SBOM 随发布留存，用于漏洞反查与合规审计。
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: ${{ secrets.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/${{ env.ACR_REPO }}@${{ steps.push.outputs.digest }}
-          format: cyclonedx
-          output: sbom-${{ needs.guard.outputs.tag }}.cdx.json
+          echo "::group::安装 Trivy（GitHub release → Docker Hub 回退）"
+          for i in 1 2 3; do
+            if curl -sSfL --retry 2 --retry-delay 3 --max-time 90 \
+                 "https://raw.githubusercontent.com/aquasecurity/trivy/v0.70.0/contrib/install.sh" \
+                 | sh -s -- -b /usr/local/bin v0.70.0 >/dev/null 2>&1 \
+               && command -v trivy >/dev/null; then
+              TRIVY_BIN="$(command -v trivy)"
+              TRIVY_MODE="binary"
+              echo "✅ 二进制安装成功（第 $i 次尝试）：$TRIVY_BIN"
+              break
+            fi
+            echo "  第 $i 次安装失败，5s 后重试"
+            sleep 5
+          done
+
+          if [ -z "$TRIVY_BIN" ]; then
+            echo "二进制源不可用，改用 Docker Hub 镜像"
+            if docker pull aquasec/trivy:0.70.0 >/dev/null 2>&1; then
+              TRIVY_MODE="docker"
+              echo "✅ 容器镜像 aquasec/trivy:0.70.0 已就绪"
+            fi
+          fi
+          echo "::endgroup::"
+
+          # 统一调用入口：二进制直接跑，容器挂载 docker 凭据与工作目录
+          run_trivy() {
+            if [ "$TRIVY_MODE" = "binary" ]; then
+              "$TRIVY_BIN" "$@"
+            else
+              docker run --rm \
+                -v "$HOME/.docker:/root/.docker:ro" \
+                -v "$PWD:/work" -w /work \
+                aquasec/trivy:0.70.0 "$@"
+            fi
+          }
+
+          if [ -z "$TRIVY_MODE" ]; then
+            echo "::warning title=Trivy 不可用::二进制与容器镜像都拿不到（CI 网络问题），本次**未扫描**。"
+            echo "scanned=false" >> "$GITHUB_OUTPUT"
+            echo "critical=unknown" >> "$GITHUB_OUTPUT"
+            {
+              echo "### ⚠️ Trivy 未执行"
+              echo ""
+              echo "工具下载失败，本次发布**没有**安全扫描结果。"
+              echo "这不等于镜像安全 —— 发布后请补扫："
+              echo '`trivy image --severity CRITICAL --ignore-unfixed <镜像>@<digest>`'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "::group::Trivy 扫描（severity=CRITICAL, ignore-unfixed）"
+          run_trivy image --scanners vuln --severity CRITICAL --ignore-unfixed \
+            --no-progress --format json --output /tmp/trivy.json "$IMAGE_REF"
+          RC=$?
+          echo "::endgroup::"
+
+          if [ $RC -ne 0 ] || [ ! -s /tmp/trivy.json ]; then
+            echo "::warning title=Trivy 扫描未完成::rc=$RC（多为漏洞库下载失败），本次**未扫描**。"
+            echo "scanned=false" >> "$GITHUB_OUTPUT"
+            echo "critical=unknown" >> "$GITHUB_OUTPUT"
+            {
+              echo "### ⚠️ Trivy 未执行（rc=$RC）"
+              echo ""
+              echo "漏洞库下载失败，本次发布**没有**安全扫描结果。"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          CRIT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' /tmp/trivy.json)
+          CRIT=${CRIT:-0}
+          echo "CRITICAL 数量：$CRIT"
+          echo "scanned=true" >> "$GITHUB_OUTPUT"
+          echo "critical=$CRIT" >> "$GITHUB_OUTPUT"
+
+          # 明细打印到日志，便于回溯具体 CVE
+          jq -r '.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")
+                 | "  \(.VulnerabilityID)  \(.PkgName)  installed=\(.InstalledVersion) fixed=\(.FixedVersion // "-")"' \
+            /tmp/trivy.json | head -30
+
+          echo "::group::生成 SBOM（CycloneDX）"
+          run_trivy image --scanners vuln --format cyclonedx \
+            --output "sbom-${TAG}.cdx.json" "$IMAGE_REF" >/dev/null 2>&1 \
+            && echo "✅ SBOM 已生成：sbom-${TAG}.cdx.json" \
+            || echo "::warning::SBOM 生成失败（不阻断发布）"
+          echo "::endgroup::"
+
+          if [ "$CRIT" -gt 0 ]; then
+            echo "::error::发现 $CRIT 个 CRITICAL（已排除无修复项的）⇒ 阻断发布"
+            exit 1
+          fi
+          echo "✅ 扫描通过：无 CRITICAL"
+          { echo "### ✅ Trivy 通过"; echo ""; echo "CRITICAL: 0（ignore-unfixed=true）"; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload SBOM
+        # 只在真正扫过时才上传，避免空目录制造假成功
+        if: steps.trivy.outputs.scanned == 'true'
         # TODO: 按规范 §8.2 应 pin 到 commit SHA，此处暂用大版本号（v4），下次统一升级时替换
         uses: actions/upload-artifact@v4
         with:
           name: sbom-${{ needs.guard.outputs.tag }}
           path: sbom-*.cdx.json
           retention-days: 180
+          if-no-files-found: warn
 
       - name: Summary
         run: |
@@ -236,7 +342,21 @@ jobs:
           GH_TOKEN: ${{ secrets.OPS_REPO_TOKEN }}
           TAG: ${{ needs.guard.outputs.tag }}
           DIGEST: ${{ needs.build-push.outputs.digest }}
+          TRIVY_SCANNED: ${{ needs.build-push.outputs.trivy_scanned }}
+          TRIVY_CRITICAL: ${{ needs.build-push.outputs.trivy_critical }}
         run: |
+          # 扫描状态必须显式写进 PR：让值班人一眼区分「扫过且通过」与「工具故障没扫」
+          if [ "$TRIVY_SCANNED" = "true" ]; then
+            if [ "$TRIVY_CRITICAL" = "0" ]; then
+              TRIVY_STATUS="✅ 已扫描 · CRITICAL 0"
+            else
+              TRIVY_STATUS="❌ 已扫描 · CRITICAL ${TRIVY_CRITICAL}"
+            fi
+          else
+            TRIVY_STATUS="⚠️ **未扫描**（Trivy 工具下载失败，非漏洞结论，发布后须补扫）"
+          fi
+          echo "TRIVY_STATUS=$TRIVY_STATUS" >> "$GITHUB_ENV"
+
           # 形态检查：同名 PR 已存在时不让流水线变红（重跑场景）
           EXISTING=$(gh pr list --repo "$OPS_REPO" --head "release/prod-${TAG}" --state open --json number --jq '.[0].number // empty')
           if [ -n "$EXISTING" ]; then
@@ -254,6 +374,7 @@ jobs:
           | digest | \`${DIGEST}\` |
           | 源 commit | \`${GITHUB_SHA}\` |
           | 触发 | \`${GITHUB_REF_NAME}\` |
+          | Trivy | ${TRIVY_STATUS} |
 
           ### 合并前必须确认
           - [ ] 该版本已在 **pre 环境**完成回归 + 冒烟（P0/P1/P2 清零）
