@@ -57,9 +57,9 @@ env:
 jobs:
   build-push:
     name: Build & push image
-    # create 事件对分支和 tag 都会触发，这里只接受 release/* 分支的创建；
+    # create 事件对分支和 tag 都会触发，这里只接受 release/* 分支与 main 的创建；
     # 其余事件（push / workflow_dispatch）照旧放行。
-    if: github.event_name != 'create' || (github.ref_type == 'branch' && startsWith(github.ref_name, 'release/'))
+    if: github.event_name != 'create' || (github.ref_type == 'branch' && (startsWith(github.ref_name, 'release/') || github.ref_name == 'main'))
     runs-on: ubuntu-latest
     timeout-minutes: 35
     outputs:
