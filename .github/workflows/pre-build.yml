@@ -45,10 +45,16 @@ permissions:
   contents: read
 
 concurrency:
-  # main 与 release/* 的 push 部署的是同一个 jkt-pre：统一分组串行化，
-  # 避免两个 ref 同时回写 ops 仓互相覆盖；新 push 取消在途构建（最新内容优先）。
+  # main / release/* / tag 部署的是同一个 jkt-pre：统一分组串行化，
+  # 避免两个 ref 同时回写 ops 仓互相覆盖；新构建取消在途构建（最新内容优先）。
   group: pre-build
-  cancel-in-progress: true
+  # ⚠️ 不能无条件 cancel-in-progress: true。create 事件对**任意**分支都会触发一次 run，
+  #    而「是否放行」是 build-push 的 job 级 if 决定的 —— run 本身已经进了并发组，
+  #    于是「随便建一个无关分支」就会把正在跑的 rc/pre 构建取消掉。
+  #    2026-11-04 实测：建 fix/pre-build-tag-trigger 把 release/0.0.0-ci-probe 的构建
+  #    从 in_progress 打成 cancelled（该 run 自己的作业全是 skipped）。
+  #    所以只在「这次运行确实会构建」时才允许取消，谓词必须与 build-push 的 if 保持一致。
+  cancel-in-progress: ${{ github.event_name != 'create' || github.ref_type == 'tag' || (github.ref_type == 'branch' && (startsWith(github.ref_name, 'release/') || github.ref_name == 'main')) }}
 
 env:
   ACR_NAMESPACE: newapi-pre
