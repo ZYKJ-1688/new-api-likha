@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -524,13 +524,21 @@ func TestManageUserQuotaConcurrentSnapshots(t *testing.T) {
 	db := setupManageUserTestDB(t)
 	user := model.User{Username: "concurrent-quota", Quota: 1000}
 	require.NoError(t, db.Create(&user).Error)
-	var ready sync.WaitGroup
-	ready.Add(2)
+	// 闸门：让两个并发调整各自的首个查询互相等待，确保双方都先读到同一份
+	// 余额再写入，构造真实的并发覆盖场景。实现上必须「有限等待」：
+	// 生产 SQLite DSN 带 _txlock=immediate，第二个事务会阻塞在 BEGIN 上
+	// 拿不到写锁，永远到不了查询回调 —— 若在这里无条件等待，两个事务互等
+	// 就会死锁整个测试进程，只能靠 go test 的 10m 超时兜底（2026-11-03 CI 实测）。
+	// 因此由第 2 个到达者负责关闸，且单个回调最多等 3s。
 	release := make(chan struct{})
+	var arrived atomic.Int32
 	require.NoError(t, db.Callback().Query().Before("gorm:query").Register("test:concurrent_quota_start", func(tx *gorm.DB) {
-		if tx.Statement.Table == "users" {
-			ready.Done()
-			<-release
+		if arrived.Add(1) == 2 {
+			close(release)
+		}
+		select {
+		case <-release:
+		case <-time.After(3 * time.Second):
 		}
 	}))
 	type result struct {
@@ -545,9 +553,8 @@ func TestManageUserQuotaConcurrentSnapshots(t *testing.T) {
 			results <- result{adjustment, err, value}
 		}(value)
 	}
-	ready.Wait()
-	close(release)
 	var committed []model.UserQuotaAdjustment
+
 	for range 2 {
 		result := <-results
 		if result.err != nil {
