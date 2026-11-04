@@ -3,15 +3,17 @@ name: pre-build
 # 雅加达 pre（预发布）环境发布流水线（GitOps）
 #
 # 链路：切 release/*（create 事件）或 push release/* 或 main（PR 合并到 main 后的 push 自动触发）
+#      或打 tag（create 事件，镜像 tag = pre-<tag名>，如 pre-v1.0.2）
 #      → 构建镜像 → 推马尼拉 ACR(newapi-pre) → 回写 ops 仓（写不可变 tag）→ ArgoCD 收敛
 # 真源：new-api-likha-ops/overlays/jkt-pre/kustomization.yaml
 #
 # 与 dev-build.yml 的差异只有**环境参数**（ACR_NAMESPACE / OPS_ENV / SMOKE_URL / tag 前缀）
-# 和**触发范围**（dev 听 development push；pre 听 release/* 的创建与 push、以及 main 的 push）。
+# 和**触发范围**（dev 听 development push；pre 听 release/* 的创建与 push、main 的 push、以及 tag 创建）。
 # 刻意保持同构：预发要验证的正是「同一条发布链路」，链路不同就失去了预发的意义。
 #
-# 四条红线（同 dev）：
-#   1. 绝不用 tag 触发（本仓 release.yml 监听 tags:'*'，打 tag 会启动三平台二进制构建）
+# 四条红线（同 dev；第 1 条按 pre 的 tag 发布需求调整）：
+#   1. 不用 push:tags 直接触发（本仓 release.yml 监听 tags:'*'，打 tag 会同时启动三平台二进制构建）；
+#      tag 触发改走 create 事件，镜像 tag 固定为 pre-<tag名>，与 prod 的 vX.Y.Z 前缀对齐
 #   2. 绝不把 kubeconfig 放进 CI（CI 不认识集群，只改 Git）
 #   3. ops 回写失败必须让 job 红（否则「镜像推了但没部署」是最难查的静默失败）
 #   4. 镜像用「不可变 tag」引用（不是 digest，也不是 latest）：ACR 仓库已开 Immutable
@@ -33,7 +35,8 @@ on:
   #    （2026-11-04 实测：直接建 release/0.0.0-probe，pre-build 零 run）。
   #    而 10.2 流程的 D-1 步正是「切 release 分支 → CI 出 rc 镜像 → 上 pre」，
   #    所以用 create 事件兜住「分支刚创建」这一动作 —— create 不受 paths 过滤影响。
-  #    代价：create 对 tag 也会触发，故 build-push 用 job 级 if 只放行 release/* 分支。
+  #    代价：create 对 tag 也会触发，job 级 if 分流处理：分支只放行 release/* 与 main，
+  #    tag 全部放行 —— 对 main 打版本 tag 时同步发 pre，镜像 tag 为 pre-<tag名>（如 pre-v1.0.2）。
   #    ⚠️ create 事件只认**默认分支（main）**上的 workflow 定义，改完必须同步到 main 才生效。
   create:
   workflow_dispatch:
@@ -42,10 +45,16 @@ permissions:
   contents: read
 
 concurrency:
-  # main 与 release/* 的 push 部署的是同一个 jkt-pre：统一分组串行化，
-  # 避免两个 ref 同时回写 ops 仓互相覆盖；新 push 取消在途构建（最新内容优先）。
+  # main / release/* / tag 部署的是同一个 jkt-pre：统一分组串行化，
+  # 避免两个 ref 同时回写 ops 仓互相覆盖；新构建取消在途构建（最新内容优先）。
   group: pre-build
-  cancel-in-progress: true
+  # ⚠️ 不能无条件 cancel-in-progress: true。create 事件对**任意**分支都会触发一次 run，
+  #    而「是否放行」是 build-push 的 job 级 if 决定的 —— run 本身已经进了并发组，
+  #    于是「随便建一个无关分支」就会把正在跑的 rc/pre 构建取消掉。
+  #    2026-11-04 实测：建 fix/pre-build-tag-trigger 把 release/0.0.0-ci-probe 的构建
+  #    从 in_progress 打成 cancelled（该 run 自己的作业全是 skipped）。
+  #    所以只在「这次运行确实会构建」时才允许取消，谓词必须与 build-push 的 if 保持一致。
+  cancel-in-progress: ${{ github.event_name != 'create' || github.ref_type == 'tag' || (github.ref_type == 'branch' && (startsWith(github.ref_name, 'release/') || github.ref_name == 'main')) }}
 
 env:
   ACR_NAMESPACE: newapi-pre
@@ -57,9 +66,11 @@ env:
 jobs:
   build-push:
     name: Build & push image
-    # create 事件对分支和 tag 都会触发，这里只接受 release/* 分支的创建；
+    # create 事件对分支和 tag 都会触发：分支只放行 release/* 与 main 的创建；
+    # tag 全部放行 —— 对 main 打版本 tag 时同步发 pre 环境（镜像 tag 仍为
+    # pre-时间戳-sha7，与 prod 的 vX.Y.Z 互不冲突，靠 sha 可互相对账）。
     # 其余事件（push / workflow_dispatch）照旧放行。
-    if: github.event_name != 'create' || (github.ref_type == 'branch' && startsWith(github.ref_name, 'release/'))
+    if: github.event_name != 'create' || github.ref_type == 'tag' || (github.ref_type == 'branch' && (startsWith(github.ref_name, 'release/') || github.ref_name == 'main'))
     runs-on: ubuntu-latest
     timeout-minutes: 35
     outputs:
@@ -74,11 +85,23 @@ jobs:
 
       - name: Compute tag
         id: meta
-        # tag 格式：pre-YYYYMMDD-HHMMSS-<sha7>
-        # ★ 精确到秒的理由同 dev-build：ACR tag 不可变，天上粒度的 tag 会撞同名。
-        # ★ 时区显式钉 Asia/Shanghai，保证与 dev 的 tag 在同一时间轴上可比较。
+        # 镜像 tag 两类格式，统一 pre- 前缀并内嵌来源：
+        #   打 tag（create tag 事件）→ pre-<tag名>（如 pre-v1.0.2），与 prod 的 vX.Y.Z 前缀对齐；
+        #   分支 push（release/*、main）→ pre-<分支名>-YYYYMMDD-HHMMSS-<sha7>：
+        #     main → pre-main-…；release/v1.0.0-rc.1 → pre-v1.0.0-rc.1-…（去掉 release/ 前缀）。
+        #   ★ 精确到秒的理由同 dev-build：ACR tag 不可变，分支可反复推，秒级粒度才不撞名。
+        #   ★ 时区显式钉 Asia/Shanghai，保证与 dev 的 tag 在同一时间轴上可比较。
+        #   ★ Docker tag 不允许「/」，分支名需去 release/ 前缀并替换非法字符。
+        # ⚠️ pre-<tag名> 受 ACR「不可变」约束：同一版本号只能推送一次，
+        #    重跑/重推同一 tag 会直接失败 —— 这是「tag 即版本」语义的代价。
         run: |
-          TAG="pre-$(TZ='Asia/Shanghai' date +%Y%m%d-%H%M%S)-$(git rev-parse --short=7 HEAD)"
+          if [ "$GITHUB_EVENT_NAME" = "create" ] && [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            TAG="pre-${GITHUB_REF_NAME}"
+          else
+            BRANCH="${GITHUB_REF_NAME#release/}"
+            BRANCH="${BRANCH//\//-}"
+            TAG="pre-${BRANCH}-$(TZ='Asia/Shanghai' date +%Y%m%d-%H%M%S)-$(git rev-parse --short=7 HEAD)"
+          fi
           IMAGE="${{ secrets.ACR_REGISTRY }}/${ACR_NAMESPACE}/${ACR_REPO}"
           echo "tag=$TAG"     >> "$GITHUB_OUTPUT"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
