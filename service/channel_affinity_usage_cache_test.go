@@ -3,14 +3,26 @@ package service
 import (
 	"fmt"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+var channelAffinityUsageCacheTestSeq atomic.Uint64
+
+// uniqueChannelAffinityTestKey 生成进程内唯一的统计缓存 key。
+// 这里不能用 time.Now().UnixNano()：时钟精度不足时（虚拟机 / CI runner / Windows）
+// 连续用例会拿到相同的纳秒值，缓存 key 撞车后计数器跨用例累加，
+// 断言就会偶发失败（expected 2 得到 3 之类）。用测试名 + 原子自增序号才与时钟无关。
+func uniqueChannelAffinityTestKey(t *testing.T) (ruleName, usingGroup, keyFP string) {
+	t.Helper()
+	suffix := fmt.Sprintf("%s-%d", t.Name(), channelAffinityUsageCacheTestSeq.Add(1))
+	return "rule_" + suffix, "default", "fp_" + suffix
+}
 
 func buildChannelAffinityStatsContextForTest(ruleName, usingGroup, keyFP string) *gin.Context {
 	rec := httptest.NewRecorder()
@@ -26,9 +38,7 @@ func buildChannelAffinityStatsContextForTest(ruleName, usingGroup, keyFP string)
 }
 
 func TestObserveChannelAffinityUsageCacheByRelayFormat_ClaudeMode(t *testing.T) {
-	ruleName := fmt.Sprintf("rule_%d", time.Now().UnixNano())
-	usingGroup := "default"
-	keyFP := fmt.Sprintf("fp_%d", time.Now().UnixNano())
+	ruleName, usingGroup, keyFP := uniqueChannelAffinityTestKey(t)
 	ctx := buildChannelAffinityStatsContextForTest(ruleName, usingGroup, keyFP)
 
 	usage := &dto.Usage{
@@ -53,9 +63,7 @@ func TestObserveChannelAffinityUsageCacheByRelayFormat_ClaudeMode(t *testing.T) 
 }
 
 func TestObserveChannelAffinityUsageCacheByRelayFormat_MixedMode(t *testing.T) {
-	ruleName := fmt.Sprintf("rule_%d", time.Now().UnixNano())
-	usingGroup := "default"
-	keyFP := fmt.Sprintf("fp_%d", time.Now().UnixNano())
+	ruleName, usingGroup, keyFP := uniqueChannelAffinityTestKey(t)
 	ctx := buildChannelAffinityStatsContextForTest(ruleName, usingGroup, keyFP)
 
 	openAIUsage := &dto.Usage{
@@ -83,9 +91,7 @@ func TestObserveChannelAffinityUsageCacheByRelayFormat_MixedMode(t *testing.T) {
 }
 
 func TestObserveChannelAffinityUsageCacheByRelayFormat_UnsupportedModeKeepsEmpty(t *testing.T) {
-	ruleName := fmt.Sprintf("rule_%d", time.Now().UnixNano())
-	usingGroup := "default"
-	keyFP := fmt.Sprintf("fp_%d", time.Now().UnixNano())
+	ruleName, usingGroup, keyFP := uniqueChannelAffinityTestKey(t)
 	ctx := buildChannelAffinityStatsContextForTest(ruleName, usingGroup, keyFP)
 
 	usage := &dto.Usage{
